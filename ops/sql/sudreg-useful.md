@@ -88,9 +88,52 @@ Batch file: [`sudreg-useful.sql`](sudreg-useful.sql) · deploy: `scripts/sudreg/
 
 ---
 
-## Napredak / sync
+## Napredak ubacivanja (live) — ovo nije SQL
 
-Primjeri ispod: **Windows** (`Invoke-SudregPsql`). Na VPS-u u **pwsh** dodaj `-Local`, ili koristi **bash docker** primjer iz uvoda.
+Dok sync radi, napredak (`phase`, `done`/`total`, `ok`/`err`, `STANJE`) ide u **datoteku**, ne u `snapshots` tablicu.
+
+| Što | Put / naredba |
+|-----|----------------|
+| Progress file (VPS) | `/opt/oriphiel-ai/data/sudreg/run/progress.json` |
+| Lock | `/opt/oriphiel-ai/data/sudreg/run/lock.json` |
+| Logovi | `/opt/oriphiel-ai/data/sudreg/logs/` |
+| Puna provjera | `Check-Sudreg.ps1 -Local` |
+| Samo status | `Sudreg-Control.ps1 -Status -Local` ili `Check-Sudreg.ps1 -StatusOnly -Local` |
+
+### VPS — bash
+
+```bash
+cd /opt/oriphiel-ai/scripts/sudreg
+
+# Live napredak (ponavljaj)
+watch -n2 cat /opt/oriphiel-ai/data/sudreg/run/progress.json
+
+# Ili jednom
+cat /opt/oriphiel-ai/data/sudreg/run/progress.json
+
+# Status: phase, done/total, brojevi u bazi
+pwsh -File ./Sudreg-Control.ps1 -Status -Local
+pwsh -File ./Check-Sudreg.ps1 -Local
+pwsh -File ./Check-Sudreg.ps1 -Local -StatusOnly
+```
+
+### Windows — PowerShell
+
+```powershell
+cd C:\GIT_PROJEKTI\oriphiel-platform\scripts\sudreg
+powershell -ExecutionPolicy Bypass -File .\Check-Sudreg.ps1
+powershell -ExecutionPolicy Bypass -File .\Sudreg-Control.ps1 -Status
+```
+
+U `progress.json` gledaj npr. `status`, `phase`, `done`, `total`, `message` (npr. `sync_subjects` s `done=1200` / `total=5000`).
+
+**SQL ispod** (`sync_state`, `snapshots`, broj firmi) = stanje **u bazi nakon / tijekom importa**, ne “percent bar” iz progress filea.
+
+---
+
+## Baza — sync_state / snapshoti (nakon ili usporedba)
+
+Primjeri: **Windows** (`Invoke-SudregPsql`). Na VPS-u u **pwsh** dodaj `-Local`, ili bash `docker` iz uvoda.
 
 ```powershell
 Invoke-SudregPsql -Sql @"
@@ -100,12 +143,25 @@ ORDER BY key;
 "@
 ```
 
+Ključevi tipično: `last_imported_snapshot_id`, `last_import_ok_count`, `last_import_err_count`.
+
 ```powershell
 Invoke-SudregPsql -Sql @"
 SELECT id, timestamp, available_until, imported_at
 FROM snapshots
 ORDER BY id DESC
 LIMIT 15;
+"@
+```
+
+```powershell
+Invoke-SudregPsql -Sql @"
+SELECT
+  (SELECT count(*) FROM companies) AS companies,
+  (SELECT count(*) FROM company_people) AS people,
+  (SELECT value FROM sync_state WHERE key = 'last_imported_snapshot_id') AS last_imported,
+  (SELECT value FROM sync_state WHERE key = 'last_import_ok_count') AS last_ok,
+  (SELECT value FROM sync_state WHERE key = 'last_import_err_count') AS last_err;
 "@
 ```
 

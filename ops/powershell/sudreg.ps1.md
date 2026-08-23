@@ -16,7 +16,17 @@ cd /opt/oriphiel-ai/scripts/sudreg
 
 **Ne radi u bashu:** `Invoke-SudregPsql` → `command not found`
 
-**Radi:**
+### Napredak ubacivanja (live)
+
+```bash
+# phase / done / total
+watch -n2 cat /opt/oriphiel-ai/data/sudreg/run/progress.json
+
+pwsh -File ./Sudreg-Control.ps1 -Status -Local
+pwsh -File ./Check-Sudreg.ps1 -Local
+```
+
+### SQL / check
 
 ```bash
 # Jedan SQL upit
