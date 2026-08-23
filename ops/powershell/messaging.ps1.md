@@ -31,26 +31,32 @@ powershell -ExecutionPolicy Bypass -File C:\GIT_PROJEKTI\oriphiel-platform\scrip
 
 ---
 
-## Ad-hoc SQL
+## Ad-hoc SQL (`@"` … `"@`)
+
+Svi gotovi upiti (prilagodi po potrebi):  
+→ [`../sql/messaging-useful.md`](../sql/messaging-useful.md)
+
+Primjer:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File C:\GIT_PROJEKTI\oriphiel-platform\scripts\oriphiel_messaging\Invoke-OriphielSql.ps1
-
-powershell -ExecutionPolicy Bypass -File C:\GIT_PROJEKTI\oriphiel-platform\scripts\oriphiel_messaging\Invoke-OriphielSql.ps1 `
-  -Sql "SELECT count(*) FROM messages;"
+cd C:\GIT_PROJEKTI\oriphiel-platform\scripts\oriphiel_messaging
+powershell -ExecutionPolicy Bypass -File .\Invoke-OriphielSql.ps1 -Sql @"
+SELECT count(*) AS without_ai
+FROM messages m
+JOIN channels_accounts ca ON ca.id = m.account_id
+WHERE lower(ca.address) = 'mario.vitt@oriphiel.hr'
+  AND (m.ai_summary IS NULL OR btrim(m.ai_summary) = '');
+"@
 ```
 
-Više upita: [`../sql/messaging-useful.sql`](../sql/messaging-useful.sql)
+Batch (cijeli file): [`../sql/messaging-useful.sql`](../sql/messaging-useful.sql)
 
 ---
 
 ## Setup (rijetko)
 
 ```powershell
-# Schema / baza
 powershell -ExecutionPolicy Bypass -File .\setup-oriphiel-messaging-db.ps1
-
-# Attachment volume
 powershell -ExecutionPolicy Bypass -File .\setup-attachments-volume.ps1
 ```
 

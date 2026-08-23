@@ -21,13 +21,16 @@ Jedan ulaz za SQL, PowerShell, bash i runbookove.
 
 ---
 
-## SQL
+## SQL (ad-hoc = uvijek `@"` … `"@`)
 
-| Datoteka | Baza | Host |
-|----------|------|------|
-| [sql/messaging-useful.sql](sql/messaging-useful.sql) | Postgres `oriphiel` | srv1890026 |
-| [sql/sudreg-useful.sql](sql/sudreg-useful.sql) | Postgres `sudreg` | srv1890026 |
-| [sql/ravnopar-mysql.sql](sql/ravnopar-mysql.sql) | MySQL `ravnopar` | srv1889799 |
+Primarni oblik za prilagodbu: **`.md`** s PowerShell here-stringom.  
+`.sql` = batch za `psql -f` / `Check-*-RunUsefulSql`.
+
+| Ad-hoc (prilagodi) | Batch | Baza |
+|--------------------|-------|------|
+| [sql/messaging-useful.md](sql/messaging-useful.md) | [`.sql`](sql/messaging-useful.sql) | Postgres `oriphiel` |
+| [sql/sudreg-useful.md](sql/sudreg-useful.md) | [`.sql`](sql/sudreg-useful.sql) | Postgres `sudreg` |
+| [sql/ravnopar-mysql.md](sql/ravnopar-mysql.md) | [`.sql`](sql/ravnopar-mysql.sql) | MySQL `ravnopar` |
 
 ---
 
