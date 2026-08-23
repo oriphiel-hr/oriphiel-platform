@@ -1,9 +1,11 @@
--- Korisni SELECT-ovi za Oriphiel messaging (baza: oriphiel)
--- Ops vault (isti sadržaj): ops/sql/messaging-useful.sql
--- Pokreni na VPS-u:
---   docker exec -i oriphiel-postgres psql -U oriphiel -d oriphiel -f - < useful-selects.sql
--- Ili:
---   powershell -File Invoke-OriphielSql.ps1 -Sql "SELECT ..."
+-- Oriphiel messaging — korisni SELECT-ovi
+-- Baza: Postgres `oriphiel` (container oriphiel-postgres)
+-- Vault: ops/sql/  |  Izvor (deploy): scripts/oriphiel_messaging/sql/useful-selects.sql
+--
+-- Na VPS-u:
+--   docker exec -i oriphiel-postgres psql -U oriphiel -d oriphiel -f - < messaging-useful.sql
+-- S Windowsa:
+--   powershell -File scripts\oriphiel_messaging\Invoke-OriphielSql.ps1 -Sql "SELECT ..."
 
 -- ========== PREGLED ==========
 SELECT 'accounts' AS what, count(*)::text AS n FROM channels_accounts
@@ -68,9 +70,7 @@ JOIN channels_accounts ca ON ca.id = m.account_id
 WHERE lower(ca.address) = 'mario.vitt@oriphiel.hr'
   AND (m.ai_summary IS NULL OR btrim(m.ai_summary) = '');
 
--- Jedan thread
--- SELECT * FROM messages WHERE thread_key = '...' ORDER BY received_at;
-
+-- Threadovi s više poruka
 SELECT m.thread_key, count(*) AS n,
        min(m.received_at) AS first_at, max(m.received_at) AS last_at,
        left(max(m.subject), 50) AS sample_subject
@@ -93,7 +93,6 @@ WHERE lower(ca.address) = 'mario.vitt@oriphiel.hr'
 ORDER BY ma.id DESC
 LIMIT 20;
 
--- Attachmenti bez datoteke na disku? (path u bazi)
 SELECT count(*) AS attach_rows,
        count(DISTINCT ma.storage_path) AS distinct_paths,
        pg_size_pretty(coalesce(sum(ma.size_bytes),0)) AS sum_size

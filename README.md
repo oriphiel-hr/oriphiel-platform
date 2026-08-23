@@ -19,6 +19,8 @@ Detalji o hostovima: `infra/hosts.yaml`
 
 ```
 oriphiel-platform/
+├── ops/                      # SQL / PS / bash / runbookovi — počni ovdje
+│   └── INDEX.md
 ├── ravnopar/                 # backend, frontend-next, mobile, deploy
 ├── assets/                   # Open WebUI branding
 ├── scripts/
@@ -62,6 +64,7 @@ Na VPS-u putanja ostaje `/var/www/Render/ravnopar` dok je ne promijeniš ručno.
 
 ## Dokumentacija
 
+- **[`ops/INDEX.md`](ops/INDEX.md)** — SQL, PowerShell, bash, runbookovi (jedan ulaz)
 - `ravnopar/README.md` — Ravnopar quick start
 - `ravnopar/docs/` — produkcija, monitoring, Render env
 - `UPUTE.txt` — Open WebUI kratke upute
