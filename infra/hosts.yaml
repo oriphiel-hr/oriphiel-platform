@@ -1,0 +1,28 @@
+# Oriphiel infrastruktura — mapiranje hostova i putanja
+# Hostinger planovi su samo billing; logika repoa ne ovisi o hosteru.
+
+srv1890026:
+  provider: Hostinger
+  ip: 186.240.157.80
+  role: oriphiel-ai
+  services:
+    - open-webui   # https://ai.oriph.io
+    - n8n          # :5678
+    - ollama
+    - postgres     # oriphiel-postgres
+    - messaging
+    - sudreg
+  paths:
+    messaging: /root/oriphiel-ai/oriphiel_messaging
+    sudreg: /opt/oriphiel-ai/scripts/sudreg
+    sudreg_data: /opt/oriphiel-ai/data/sudreg
+    attachments: /var/lib/oriphiel/attachments/email
+
+srv1889799:
+  provider: Hostinger
+  ip: 186.240.157.39
+  role: ravnopar
+  note: Kod u oriphiel-platform/ravnopar; VPS putanja još /var/www/Render/ravnopar
+  paths:
+    app: /var/www/Render/ravnopar
+    local: C:/GIT_PROJEKTI/oriphiel-platform/ravnopar

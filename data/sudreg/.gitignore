@@ -1,0 +1,4 @@
+# Sudreg lokalni podaci (snapshoti, promjene, token cache)
+# Generiraju skripte u scripts\sudreg\
+*
+!.gitignore

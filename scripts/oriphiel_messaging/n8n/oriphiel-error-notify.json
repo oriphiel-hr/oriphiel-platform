@@ -1,0 +1,62 @@
+{
+  "name": "Oriphiel — Error notify",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "id": "err-trigger-001",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const e = $input.first().json;\nreturn [{\n  json: {\n    workflow: e.workflow?.name || 'unknown',\n    workflow_id: e.workflow?.id,\n    execution_id: e.execution?.id,\n    node: e.execution?.lastNodeExecuted,\n    message: e.execution?.error?.message || 'unknown error',\n    stack: (e.execution?.error?.stack || '').slice(0, 2000),\n    at: new Date().toISOString()\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 0],
+      "id": "err-format-001",
+      "name": "Format Error"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_ERROR_WEBHOOK_URL || 'http://127.0.0.1:5678/webhook-test/oriphiel-error' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [480, 0],
+      "id": "err-webhook-001",
+      "name": "POST Error Webhook",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "content": "Povezi u Settings -> Error Workflow ovaj workflow.\n\nOpcionalno postavi env N8N_ERROR_WEBHOOK_URL ili zamijeni s Email/SMTP nodom.",
+        "height": 180,
+        "width": 360
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-40, -140],
+      "id": "err-note-001",
+      "name": "Sticky Note"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [[{ "node": "Format Error", "type": "main", "index": 0 }]]
+    },
+    "Format Error": {
+      "main": [[{ "node": "POST Error Webhook", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" },
+  "tags": []
+}

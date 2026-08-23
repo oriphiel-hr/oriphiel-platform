@@ -1,0 +1,44 @@
+Oriphiel AI — Open WebUI paket (ai.oriph.io / KVM 8)
+====================================================
+Lokacija: C:\GIT_PROJEKTI\oriphiel-platform
+VPS: root@186.240.157.80
+URL: https://ai.oriph.io
+
+Detaljne upute (Word)
+---------------------
+  docs\Oriphiel_AI_OpenWebUI_upute.docx
+  Regeneracija: python docs\generate_upute_docx.py
+
+  docs\Aider_Oriphiel_AI_upute.docx
+  Regeneracija: python docs\generate_aider_upute_docx.py
+  (Aider lokalno + povezivanje na ai.oriph.io)
+
+Struktura
+---------
+  assets\     logo, favicon, custom.css, oriphiel-brand.js
+  scripts\    deploy / branding / disable-tools
+  source\     Logo_oriphiel.jpg (izvorni logo)
+  docs\       Word upute + generator
+
+Windows PowerShell naredbe
+--------------------------
+1) Puni deploy (branding + tools OFF):
+   powershell -ExecutionPolicy Bypass -File C:\GIT_PROJEKTI\oriphiel-platform\scripts\deploy-all.ps1
+
+2) Samo ugasi tools:
+   powershell -ExecutionPolicy Bypass -File C:\GIT_PROJEKTI\oriphiel-platform\scripts\disable-tools.ps1
+
+3) Samo branding:
+   powershell -ExecutionPolicy Bypass -File C:\GIT_PROJEKTI\oriphiel-platform\scripts\upload-branding.ps1
+
+Nakon deploya
+-------------
+- Zatvori SVE tabove ai.oriph.io
+- Novi tab + Ctrl+Shift+R
+- Novi razgovor
+- Test: Koliko je 2+2? Odgovori samo brojem.  -> očekivano: 4
+
+Napomena
+--------
+Stari folderi C:\llama\branding i C:\llama\disable-tools.sh su zastarjeli.
+Koristi ovaj paket.

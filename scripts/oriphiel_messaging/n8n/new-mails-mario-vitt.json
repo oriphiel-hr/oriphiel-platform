@@ -1,0 +1,385 @@
+{
+  "name": "New mails - mario.vitt@oriphiel.hr",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-560, 400],
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "name": "Manual Trigger (Backfill)"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "opt-run-ai",
+              "name": "RUN_AI",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "opt-reset",
+              "name": "RESET_BEFORE",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "opt-batch",
+              "name": "BATCH_SIZE",
+              "value": "50",
+              "type": "string"
+            },
+            {
+              "id": "opt-seen",
+              "name": "MARK_AS_SEEN",
+              "value": "0",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-420, 400],
+      "id": "backfill-options-001",
+      "name": "Backfill Options"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-560, 880],
+      "id": "enrich-ai-trigger-001",
+      "name": "Manual Trigger (AI enrich)"
+    },
+    {
+      "parameters": {
+        "command": "=cd /root/oriphiel-ai/oriphiel_messaging && if pgrep -f 'enrich-existing-messages.py' >/dev/null; then echo ALREADY_RUNNING; cat /tmp/oriphiel-ai-enrich-mario.vitt.json 2>/dev/null; exit 0; fi; if [ ! -f ollama-enrich-message.py ]; then echo MISSING_ollama-enrich-message.py; exit 2; fi; nohup env ACCOUNT_EMAIL=mario.vitt@oriphiel.hr ONLY_MISSING=1 LIMIT=0 BATCH_SIZE=20 RUN_AI=1 STATUS_FILE=/tmp/oriphiel-ai-enrich-mario.vitt.json python3 -u enrich-existing-messages.py >>/tmp/oriphiel-ai-enrich-last.log 2>&1 & echo STARTED_PID=$!; sleep 2; cat /tmp/oriphiel-ai-enrich-mario.vitt.json 2>/dev/null || echo 'status — watch -n5 cat /tmp/oriphiel-ai-enrich-mario.vitt.json'"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [-280, 880],
+      "id": "enrich-ai-ssh-001",
+      "name": "Run AI Enrich (existing)",
+      "credentials": {
+        "sshPassword": {
+          "id": "Zk51RObusYzm7RWu",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT ca.id AS account_id,\n       ca.address,\n       count(m.id) AS mailova,\n       count(m.id) FILTER (\n         WHERE m.ai_summary IS NOT NULL AND btrim(m.ai_summary) <> ''\n       ) AS s_ai,\n       count(m.id) FILTER (WHERE m.ai_priority = 'urgent') AS urgent,\n       count(m.id) FILTER (WHERE m.ai_priority = 'high') AS high,\n       (\n         SELECT count(*)\n         FROM message_attachments ma\n         JOIN messages m2 ON m2.id = ma.message_id\n         WHERE m2.account_id = ca.id\n       ) AS attachmenta_db,\n       max(m.received_at) AS zadnji_mail\nFROM channels_accounts ca\nLEFT JOIN messages m ON m.account_id = ca.id\nWHERE lower(ca.address) = 'mario.vitt@oriphiel.hr'\nGROUP BY ca.id, ca.address;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [-280, 640],
+      "id": "check-counts-pg-001",
+      "name": "Broj mailova (DB)",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Live\nIMAP → baza + AI (uvijek)\n\n## Backfill Options\n`RUN_AI` / `RESET_BEFORE` / `BATCH_SIZE` / `MARK_AS_SEEN`\n\n## AI za postojeće mailove\n**Manual Trigger (AI enrich)** — samo Ollama na porukama bez AI (bez IMAP-a).\nStatus: `watch -n5 cat /tmp/oriphiel-ai-enrich-mario.vitt.json`\n\n## Broj mailova\n**Manual Trigger (Broj mailova)** → gledaj `s_ai`",
+        "height": 420,
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-600, -180],
+      "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "command": "=cd /root/oriphiel-ai/oriphiel_messaging && if pgrep -f 'sync-imap-backfill.py' >/dev/null; then echo ALREADY_RUNNING; pgrep -af sync-imap-backfill; cat /tmp/oriphiel-imap-backfill-mario.vitt.json 2>/dev/null; exit 0; fi; nohup env ENV_FILE=accounts/oriphiel.hr-mario.vitt.env RESET_BEFORE={{ $json.RESET_BEFORE }} RUN_AI={{ $json.RUN_AI }} BATCH_SIZE={{ $json.BATCH_SIZE }} MARK_AS_SEEN={{ $json.MARK_AS_SEEN }} STATUS_FILE=/tmp/oriphiel-imap-backfill-mario.vitt.json bash sync-imap-backfill.sh >>/tmp/oriphiel-imap-backfill-last.log 2>&1 & echo STARTED_PID=$! RUN_AI={{ $json.RUN_AI }} RESET_BEFORE={{ $json.RESET_BEFORE }}; sleep 2; cat /tmp/oriphiel-imap-backfill-mario.vitt.json 2>/dev/null || echo 'status se pise — watch -n2 cat /tmp/oriphiel-imap-backfill-mario.vitt.json'"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [-200, 400],
+      "id": "backfill-ssh-001",
+      "name": "Run Backfill (Python)",
+      "credentials": {
+        "sshPassword": {
+          "id": "Zk51RObusYzm7RWu",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "downloadAttachments": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.2,
+      "position": [-560, 0],
+      "id": "b432285b-66b1-4041-90ed-99c064f69c80",
+      "name": "Email Trigger (IMAP) - Mario Vitt - Oriphiel",
+      "credentials": {
+        "imap": {
+          "id": "jtEwVo8jV9I4d8Ur",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id AS account_id\nFROM channels_accounts\nWHERE address = 'mario.vitt@oriphiel.hr'\n  AND channel = 'email'\n  AND is_active = TRUE\nLIMIT 1;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [-280, 0],
+      "id": "dcb19a76-18f1-49d7-bcb0-4896a485bc5f",
+      "name": "Get Account",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const acc = $('Get Account').first().json;\nconst mail = $('Email Trigger (IMAP) - Mario Vitt - Oriphiel').first();\nconst j = mail.json;\n\nfunction header(name) {\n  const h = j.headers || j.metadata || {};\n  const key = Object.keys(h).find(k => k.toLowerCase() === name.toLowerCase());\n  return key ? h[key] : null;\n}\nfunction pickAngle(s) {\n  if (!s) return null;\n  const m = String(s).match(/<([^>]+)>/);\n  return m ? m[1].toLowerCase() : String(s).trim().toLowerCase();\n}\nfunction parseFrom(j) {\n  if (j.from?.value?.[0]?.address) return String(j.from.value[0].address).trim().toLowerCase();\n  if (typeof j.from === 'string') return j.from.trim().toLowerCase();\n  return 'unknown@unknown';\n}\nfunction threadKey(j) {\n  const inReply = pickAngle(header('in-reply-to') || j.inReplyTo);\n  if (inReply) return inReply;\n  const refs = String(header('references') || j.references || '');\n  const rm = refs.match(/<([^>]+)>/);\n  if (rm) return rm[1].toLowerCase();\n  const mid = pickAngle(header('message-id') || j.messageId);\n  if (mid) return mid;\n  return 'uid-' + j.attributes.uid;\n}\n\nreturn [{\n  json: {\n    account_id: acc.account_id,\n    from_address: parseFrom(j),\n    subject: j.subject ?? '',\n    textPlain: j.textPlain ?? j.text ?? '',\n    textHtml: j.textHtml ?? '',\n    uid: j.attributes?.uid,\n    date: j.date ?? null,\n    external_id: 'uid-' + j.attributes.uid,\n    thread_key: threadKey(j),\n    mode: 'live'\n  },\n  binary: mail.binary ?? {}\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-40, 0],
+      "id": "f6a7b8c9-d0e1-2345-f012-456789012345",
+      "name": "Normalize Mail (Live)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO contacts (primary_email)\nSELECT lower($1)\nWHERE NOT EXISTS (\n  SELECT 1 FROM contacts WHERE primary_email = lower($1)\n);\n\nSELECT id AS contact_id\nFROM contacts\nWHERE primary_email = lower($1)\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [ $json.from_address ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [200, 0],
+      "id": "7580c567-9f24-45ee-8ffc-f8df220aedb0",
+      "name": "Upsert Contact",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO messages (\n  account_id, contact_id, channel, direction,\n  from_address, subject, body_text, body_html,\n  external_id, thread_key, status, received_at\n) VALUES (\n  $1, $2, 'email', 'in',\n  $3, $4, $5, $6,\n  $7, $8, 'new', COALESCE($9::timestamptz, NOW())\n)\nON CONFLICT (channel, external_id) DO UPDATE SET\n  subject = EXCLUDED.subject,\n  body_text = EXCLUDED.body_text,\n  body_html = EXCLUDED.body_html,\n  from_address = EXCLUDED.from_address,\n  thread_key = EXCLUDED.thread_key,\n  received_at = EXCLUDED.received_at\nRETURNING id AS message_id, subject;",
+        "options": {
+          "queryReplacement": "={{ (() => { const m = $('Normalize Mail (Live)').item.json; return [ m.account_id, $('Upsert Contact').item.json.contact_id, m.from_address, m.subject, m.textPlain, m.textHtml, m.external_id, m.thread_key, m.date ]; })() }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [440, 0],
+      "id": "98abde85-8720-4bf3-82d4-45023e7638f9",
+      "name": "Insert Message",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const mail = $('Normalize Mail (Live)').item.json;\nconst msg = $('Insert Message').item.json;\nconst model = $env.OLLAMA_MODEL || 'llama3.1:8b';\nconst url = ($env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\\/$/, '');\nconst body = (mail.textPlain || '').slice(0, 6000);\nconst prompt = `Analiziraj dolazni email na hrvatskom. Vrati SAMO JSON: {\\\"summary\\\":\\\"...\\\",\\\"priority\\\":\\\"low|normal|high|urgent\\\",\\\"draft_reply\\\":\\\"...\\\"}\\n\\nOd: ${mail.from_address}\\nPredmet: ${mail.subject}\\n\\n${body}`;\n\ntry {\n  const resp = await fetch(`${url}/api/generate`, {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ model, prompt, stream: false, format: 'json', options: { temperature: 0.2 } })\n  });\n  const data = await resp.json();\n  const raw = data.response || '{}';\n  const ai = JSON.parse(raw.match(/\\{[\\s\\S]*\\}/)?.[0] || raw);\n  const priority = ['low','normal','high','urgent'].includes(String(ai.priority||'').toLowerCase()) ? String(ai.priority).toLowerCase() : 'normal';\n  return [{ json: {\n    message_id: msg.message_id,\n    ai_summary: String(ai.summary || '').slice(0, 4000),\n    ai_priority: priority,\n    ai_draft: String(ai.draft_reply || '').slice(0, 8000)\n  }}];\n} catch (e) {\n  return [{ json: { message_id: msg.message_id, ai_summary: null, ai_priority: null, ai_draft: null, ai_error: String(e.message || e) } }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 0],
+      "id": "ai-enrich-001",
+      "name": "AI Enrich (Ollama)",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE messages\nSET ai_summary = $2,\n    ai_priority = $3,\n    ai_draft = $4\nWHERE id = $1\nRETURNING id AS message_id, ai_summary, ai_priority;",
+        "options": {
+          "queryReplacement": "={{ [ $json.message_id, $json.ai_summary, $json.ai_priority, $json.ai_draft ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [920, 0],
+      "id": "ai-update-001",
+      "name": "Update Message AI",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "2858d003-feba-4a87-bb2a-961081a10975",
+              "leftValue": "={{ Object.keys($('Normalize Mail (Live)').item.binary || {}).length }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1160, 0],
+      "id": "6138fd07-eed9-4d25-b947-5542dd8be1ae",
+      "name": "If Has Attachments"
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p /var/lib/oriphiel/attachments/email/{{ $('Normalize Mail (Live)').item.json.account_id }} && chown -R 1000:1000 /var/lib/oriphiel/attachments/email"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [1400, -80],
+      "id": "11cf8a4d-ac49-4380-955a-092b5736fc0f",
+      "name": "Create Attachment Directory",
+      "credentials": {
+        "sshPassword": {
+          "id": "Zk51RObusYzm7RWu",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $('Insert Message').item.json;\nconst mail = $('Normalize Mail (Live)').item;\nconst binary = mail.binary || {};\nconst accountId = mail.json.account_id;\nconst messageId = msg.message_id || msg.id;\nconst entries = Object.entries(binary);\nif (!entries.length) return [];\nreturn entries.map(([key, file]) => {\n  const sizeNum = Number(file.fileSize);\n  const filename = file.fileName || key || 'attachment.bin';\n  const storagePath = `/var/lib/oriphiel/attachments/email/${accountId}/${messageId}_${filename}`;\n  return {\n    json: { message_id: messageId, filename, mimeType: file.mimeType || 'application/octet-stream', fileSize: Number.isFinite(sizeNum) ? Math.round(sizeNum) : 0, storage_path: storagePath, account_id: accountId },\n    binary: { data: file }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1640, -80],
+      "id": "82b806d5-0136-4ad1-8e54-38d0a32ca1a7",
+      "name": "Prepare Attachment Data"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.storage_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [1880, -80],
+      "id": "99312a6a-9d06-4171-a9c9-885f34a56855",
+      "name": "Write Attachment File"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO message_attachments (\n  message_id, filename, mime_type, size_bytes, storage_path\n) VALUES ($1, $2, $3, $4, $5)\nRETURNING id, message_id, filename, size_bytes, storage_path;",
+        "options": {
+          "queryReplacement": "={{ [ $json.message_id, $json.filename, $json.mimeType, $json.fileSize, $json.storage_path ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [2120, -80],
+      "id": "e729a7ca-261e-432f-bbfb-bd78b8e071b1",
+      "name": "Insert Attachment",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger (Backfill)": {
+      "main": [[{ "node": "Backfill Options", "type": "main", "index": 0 }]]
+    },
+    "Backfill Options": {
+      "main": [[{ "node": "Run Backfill (Python)", "type": "main", "index": 0 }]]
+    },
+    "Manual Trigger (Broj mailova)": {
+      "main": [[{ "node": "Broj mailova (DB)", "type": "main", "index": 0 }]]
+    },
+    "Manual Trigger (AI enrich)": {
+      "main": [[{ "node": "Run AI Enrich (existing)", "type": "main", "index": 0 }]]
+    },
+    "Email Trigger (IMAP) - Mario Vitt - Oriphiel": {
+      "main": [[{ "node": "Get Account", "type": "main", "index": 0 }]]
+    },
+    "Get Account": {
+      "main": [[{ "node": "Normalize Mail (Live)", "type": "main", "index": 0 }]]
+    },
+    "Normalize Mail (Live)": {
+      "main": [[{ "node": "Upsert Contact", "type": "main", "index": 0 }]]
+    },
+    "Upsert Contact": {
+      "main": [[{ "node": "Insert Message", "type": "main", "index": 0 }]]
+    },
+    "Insert Message": {
+      "main": [[{ "node": "AI Enrich (Ollama)", "type": "main", "index": 0 }]]
+    },
+    "AI Enrich (Ollama)": {
+      "main": [[{ "node": "Update Message AI", "type": "main", "index": 0 }]]
+    },
+    "Update Message AI": {
+      "main": [[{ "node": "If Has Attachments", "type": "main", "index": 0 }]]
+    },
+    "If Has Attachments": {
+      "main": [[{ "node": "Create Attachment Directory", "type": "main", "index": 0 }]]
+    },
+    "Create Attachment Directory": {
+      "main": [[{ "node": "Prepare Attachment Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Attachment Data": {
+      "main": [[{ "node": "Write Attachment File", "type": "main", "index": 0 }]]
+    },
+    "Write Attachment File": {
+      "main": [[{ "node": "Insert Attachment", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d7f8a004-59dd-6g2f-d429-ccf564f8efff",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "ebde2e6888e3941257d45891b24299663f545fe7138ce0509fd1d05984535adf"
+  },
+  "id": "tbXGlW48tRKsV5YA",
+  "tags": []
+}

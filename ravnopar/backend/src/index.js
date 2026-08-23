@@ -1,0 +1,86 @@
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import { matchmakingRouter } from './routes/matchmaking.js';
+import { authRouter } from './routes/auth.js';
+import { paymentsRouter, handleStripeWebhook } from './routes/payments.js';
+import { adminRouter } from './routes/admin.js';
+import { adminAuditRouter } from './routes/admin-audit.js';
+import { prisma } from './lib/prisma.js';
+import { ensureVideosRoot, getUploadsRoot } from './lib/video-storage.js';
+
+const app = express();
+const startedAt = new Date().toISOString();
+
+function buildCorsOrigins() {
+  const extra = (process.env.CORS_ALLOWED_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean);
+  return [...new Set(
+    [
+      process.env.FRONTEND_BASE_URL?.replace(/\/$/, ''),
+      ...extra,
+      'http://localhost:5173',
+      'http://127.0.0.1:5173'
+    ].filter(Boolean)
+  )];
+}
+
+const corsOrigins = buildCorsOrigins();
+
+app.use(cors({
+  origin: corsOrigins.length ? corsOrigins : true,
+  credentials: true
+}));
+
+app.post(
+  '/api/payments/stripe/webhook',
+  express.raw({ type: 'application/json' }),
+  handleStripeWebhook
+);
+
+app.use(express.json({ limit: '2mb' }));
+
+await ensureVideosRoot();
+app.use(
+  '/media',
+  express.static(getUploadsRoot(), {
+    fallthrough: false,
+    maxAge: '7d',
+    setHeaders(res) {
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+    }
+  })
+);
+
+app.get('/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({
+      ok: true,
+      service: 'ravnopar-backend',
+      startedAt,
+      database: 'ok'
+    });
+  } catch (_error) {
+    res.status(503).json({
+      ok: false,
+      service: 'ravnopar-backend',
+      startedAt,
+      database: 'error'
+    });
+  }
+});
+
+app.use('/api/auth', authRouter);
+app.use('/api/matchmaking', matchmakingRouter);
+app.use('/api/payments', paymentsRouter);
+app.use('/api/admin', adminRouter);
+app.use('/api/admin/audit', adminAuditRouter);
+
+const port = Number(process.env.PORT || 4200);
+app.listen(port, () => {
+  // eslint-disable-next-line no-console
+  console.log(`Ravnopar backend running on ${port}`);
+});

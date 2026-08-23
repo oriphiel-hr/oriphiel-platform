@@ -1,0 +1,40 @@
+# Secrets
+.env
+*.env
+!*.env.example
+!**/.env.example
+!**/.env.production
+accounts/*.env
+**/.env.local
+**/.env.*.local
+
+# Sudreg lokalni podaci (generiraju skripte)
+data/sudreg/*
+!data/sudreg/.gitignore
+
+# Ravnopar (Node)
+**/node_modules/
+**/dist/
+**/.next/
+**/data/uploads/
+ravnopar/mobile/android/
+ravnopar/mobile/ios/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Word temp / lock
+~$*
+*.tmp
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log

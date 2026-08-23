@@ -1,0 +1,7 @@
+# DEPRECATED — ne importaj u n8n.
+# Zamjena:
+#   Live:  oriphiel-live-account-stub.json   → Downloads\Oriphiel-Live-Account-Stub.json
+#   Ops:   oriphiel-mail-hub.json            → Downloads\Oriphiel-Mail-Hub.json
+# Vidi: UPUTE.md , MULTI-ACCOUNT.md , ../README.md
+#
+# new-mails-mario-vitt.json ostaje samo kao arhiva starog monolitnog workflowa.

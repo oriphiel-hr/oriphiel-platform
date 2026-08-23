@@ -1,0 +1,267 @@
+{
+  "name": "Oriphiel — Mail Hub (multi-account)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Multi-account Hub (bez duplog flowa)\n\n1. Otvori **Account Config**:\n- `ACCOUNT_EMAIL` — npr. info@oriphiel.hr\n- `ENV_FILE` — npr. accounts/info.env\n- `STATUS_TAG` — kratki tag za status JSON (npr. info)\n- `ACTION` — `backfill` | `enrich` | `count`\n- `RUN_AI` / `RESET_BEFORE` / `BATCH_SIZE` / `MARK_AS_SEEN`\n\n2. Klikni **Manual Trigger** (jednom).\n\n## Novi mailbox\n1. `cp accounts/*.env.example accounts/XYZ.env` + lozinka\n2. n8n Credentials → novi IMAP\n3. Live: import `oriphiel-live-account-stub.json`, spoji IMAP credential, postavi email\n4. Ops: samo promijeni Account Config ovdje\n\nNe treba kopirati cijeli AI/attachment flow.",
+        "height": 480,
+        "width": 500
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-700, -220],
+      "id": "hub-sticky-001",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-480, 160],
+      "id": "hub-trig-001",
+      "name": "Manual Trigger"
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "a0",
+              "name": "ACTION",
+              "value": "count",
+              "type": "string"
+            },
+            {
+              "id": "a1",
+              "name": "ACCOUNT_EMAIL",
+              "value": "mario.vitt@oriphiel.hr",
+              "type": "string"
+            },
+            {
+              "id": "a2",
+              "name": "ENV_FILE",
+              "value": "accounts/oriphiel.hr-mario.vitt.env",
+              "type": "string"
+            },
+            {
+              "id": "a3",
+              "name": "STATUS_TAG",
+              "value": "mario.vitt",
+              "type": "string"
+            },
+            {
+              "id": "a4",
+              "name": "RUN_AI",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "a5",
+              "name": "RESET_BEFORE",
+              "value": "0",
+              "type": "string"
+            },
+            {
+              "id": "a6",
+              "name": "BATCH_SIZE",
+              "value": "50",
+              "type": "string"
+            },
+            {
+              "id": "a7",
+              "name": "MARK_AS_SEEN",
+              "value": "0",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-240, 160],
+      "id": "hub-account-config-001",
+      "name": "Account Config"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c1",
+                    "leftValue": "={{ $json.ACTION }}",
+                    "rightValue": "backfill",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "backfill"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c2",
+                    "leftValue": "={{ $json.ACTION }}",
+                    "rightValue": "enrich",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "enrich"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "c3",
+                    "leftValue": "={{ $json.ACTION }}",
+                    "rightValue": "count",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "count"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [0, 160],
+      "id": "hub-switch-001",
+      "name": "Switch ACTION"
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $input.first().json;\nconst tag = String(c.STATUS_TAG || 'account').replace(/[^a-zA-Z0-9._-]/g, '');\nconst status = `/tmp/oriphiel-imap-backfill-${tag}.json`;\nconst command = [\n  'cd /root/oriphiel-ai/oriphiel_messaging',\n  `if pgrep -f sync-imap-backfill.py >/dev/null; then echo ALREADY_RUNNING; cat ${status} 2>/dev/null; exit 0; fi`,\n  `nohup env ENV_FILE=${c.ENV_FILE} ACCOUNT_EMAIL=${c.ACCOUNT_EMAIL} RESET_BEFORE=${c.RESET_BEFORE} RUN_AI=${c.RUN_AI} BATCH_SIZE=${c.BATCH_SIZE} MARK_AS_SEEN=${c.MARK_AS_SEEN} STATUS_FILE=${status} bash sync-imap-backfill.sh >>/tmp/oriphiel-imap-backfill-last.log 2>&1 &`,\n  `echo STARTED_PID=$! account=${c.ACCOUNT_EMAIL} RUN_AI=${c.RUN_AI}`,\n  'sleep 2',\n  `cat ${status} 2>/dev/null || echo status_pending`\n].join(' && ');\nreturn [{ json: { ...c, command, status_file: status } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 0],
+      "id": "hub-code-backfill-001",
+      "name": "Build Backfill CMD"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.command }}"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [520, 0],
+      "id": "hub-ssh-backfill-001",
+      "name": "Run Backfill (SSH)",
+      "credentials": {
+        "sshPassword": {
+          "id": "Zk51RObusYzm7RWu",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const c = $input.first().json;\nconst tag = String(c.STATUS_TAG || 'account').replace(/[^a-zA-Z0-9._-]/g, '');\nconst status = `/tmp/oriphiel-ai-enrich-${tag}.json`;\nconst email = String(c.ACCOUNT_EMAIL).replace(/'/g, \"'\\\\''\");\nconst command = [\n  'cd /root/oriphiel-ai/oriphiel_messaging',\n  `if pgrep -f enrich-existing-messages.py >/dev/null; then echo ALREADY_RUNNING; cat ${status} 2>/dev/null; exit 0; fi`,\n  `if [ ! -f ollama-enrich-message.py ] || [ ! -f enrich-existing-messages.py ]; then echo MISSING_FILES; exit 2; fi`,\n  `nohup env ACCOUNT_EMAIL='${email}' ONLY_MISSING=1 LIMIT=0 BATCH_SIZE=10 OLLAMA_MODEL=llama3.1:8b STATUS_FILE=${status} python3 -u enrich-existing-messages.py >>/tmp/oriphiel-ai-enrich-last.log 2>&1 &`,\n  `echo STARTED_PID=$! account=${email}`,\n  'sleep 2',\n  `cat ${status} 2>/dev/null || echo status_pending`\n].join(' && ');\nreturn [{ json: { ...c, command, status_file: status } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [280, 160],
+      "id": "hub-code-enrich-001",
+      "name": "Build Enrich CMD"
+    },
+    {
+      "parameters": {
+        "command": "={{ $json.command }}"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [520, 160],
+      "id": "hub-ssh-enrich-001",
+      "name": "Run AI Enrich (SSH)",
+      "credentials": {
+        "sshPassword": {
+          "id": "Zk51RObusYzm7RWu",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT ca.id AS account_id,\n       ca.address,\n       count(m.id) AS mailova,\n       count(m.id) FILTER (\n         WHERE m.ai_summary IS NOT NULL AND btrim(m.ai_summary) <> ''\n       ) AS s_ai,\n       count(m.id) FILTER (WHERE m.ai_priority = 'urgent') AS urgent,\n       count(m.id) FILTER (WHERE m.ai_priority = 'high') AS high,\n       (\n         SELECT count(*)\n         FROM message_attachments ma\n         JOIN messages m2 ON m2.id = ma.message_id\n         WHERE m2.account_id = ca.id\n       ) AS attachmenta_db,\n       max(m.received_at) AS zadnji_mail\nFROM channels_accounts ca\nLEFT JOIN messages m ON m.account_id = ca.id\nWHERE lower(ca.address) = lower($1)\nGROUP BY ca.id, ca.address;",
+        "options": {
+          "queryReplacement": "={{ [ $json.ACCOUNT_EMAIL ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [280, 320],
+      "id": "hub-pg-count-001",
+      "name": "Broj mailova (DB)",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [[{ "node": "Account Config", "type": "main", "index": 0 }]]
+    },
+    "Account Config": {
+      "main": [[{ "node": "Switch ACTION", "type": "main", "index": 0 }]]
+    },
+    "Switch ACTION": {
+      "main": [
+        [{ "node": "Build Backfill CMD", "type": "main", "index": 0 }],
+        [{ "node": "Build Enrich CMD", "type": "main", "index": 0 }],
+        [{ "node": "Broj mailova (DB)", "type": "main", "index": 0 }]
+      ]
+    },
+    "Build Backfill CMD": {
+      "main": [[{ "node": "Run Backfill (SSH)", "type": "main", "index": 0 }]]
+    },
+    "Build Enrich CMD": {
+      "main": [[{ "node": "Run AI Enrich (SSH)", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false,
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

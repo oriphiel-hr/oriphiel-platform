@@ -1,0 +1,355 @@
+@import url("https://fonts.googleapis.com/css2?family=Sora:wght@600;700&display=swap");
+
+/* Oriphiel branding v45 — 1 logo: OWUI profile → brand, bez duplikata */
+
+:root {
+  --oriphiel-topbar-h: 2.4rem;
+  --oriphiel-bottom-gap: 1.1rem;
+}
+
+html.dark,
+html.dark body,
+html,
+body {
+  background-color: #0e0e0e !important;
+  background-image: radial-gradient(
+      ellipse 90% 70% at 50% 20%,
+      rgba(40, 40, 40, 0.45),
+      rgba(14, 14, 14, 0) 60%
+    ),
+    linear-gradient(180deg, #121212 0%, #0b0b0b 100%) !important;
+  background-repeat: no-repeat !important;
+  background-size: cover !important;
+  background-attachment: scroll !important;
+  color-scheme: dark !important;
+}
+
+/*
+  NE koristi body padding-top + h-screen/100vh — nakon prvog odgovora
+  sticky composer ode ispod viewporta i gumbi ispod textboxa nestanu.
+  Umjesto toga: #app zauzme preostalu visinu ispod topbara.
+*/
+html,
+html.dark,
+html.dark body,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100% !important;
+  max-height: 100dvh !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+}
+
+#app,
+#root {
+  box-sizing: border-box !important;
+  margin-top: var(--oriphiel-topbar-h) !important;
+  height: calc(100dvh - var(--oriphiel-topbar-h)) !important;
+  max-height: calc(100dvh - var(--oriphiel-topbar-h)) !important;
+  overflow: hidden !important;
+  padding-bottom: var(--oriphiel-bottom-gap) !important;
+}
+
+#app > div,
+#root > div {
+  height: 100% !important;
+  max-height: 100% !important;
+}
+
+/* Composer mora ostati vidljiv + malo zraka od dna */
+textarea,
+form:has(textarea),
+[contenteditable="true"] {
+  visibility: visible !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+}
+
+textarea {
+  display: block !important;
+  min-height: 2.5rem !important;
+}
+
+/* Sticky composer: ne lijepi se ispod vidljivog ruba */
+.sticky.bottom-0,
+div.sticky.bottom-0,
+[class~="sticky"][class~="bottom-0"] {
+  bottom: 0 !important;
+  padding-bottom: 0.35rem !important;
+}
+
+#oriphiel-pattern {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+  background: transparent !important;
+}
+
+#oriphiel-pattern .oriphiel-wm-img {
+  position: absolute !important;
+  left: 50% !important;
+  top: 42% !important;
+  transform: translate(-50%, -50%) !important;
+  width: min(72vw, 680px) !important;
+  max-width: 92vw !important;
+  height: auto !important;
+  opacity: 0.11 !important;
+  object-fit: contain !important;
+  pointer-events: none !important;
+  user-select: none !important;
+  filter: brightness(1.25) contrast(1.05) !important;
+}
+
+#oriphiel-topbar {
+  position: fixed !important;
+  top: 0 !important;
+  left: 3.25rem !important;
+  right: 0 !important;
+  z-index: 2147483000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 0.55rem !important;
+  padding: 0.4rem 0.9rem !important;
+  min-height: 2.25rem !important;
+  margin: 0 !important;
+  background: rgba(12, 12, 12, 0.96) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #eee !important;
+  font-size: 0.8rem !important;
+  line-height: 1.3 !important;
+  text-align: center !important;
+}
+
+#oriphiel-topbar img {
+  width: 22px !important;
+  height: 22px !important;
+  object-fit: contain !important;
+  flex-shrink: 0 !important;
+}
+
+#oriphiel-topbar strong {
+  color: #fff !important;
+  font-weight: 650 !important;
+  margin-right: 0.3rem !important;
+}
+
+#oriphiel-topbar a {
+  color: #d5d5d5 !important;
+  text-decoration: underline !important;
+}
+
+#oriphiel-topbar .oriphiel-tagline {
+  display: inline !important;
+}
+
+/* Stari #oriphiel-chat-brand — sakrij ako ostane u DOM-u */
+#oriphiel-chat-brand {
+  display: none !important;
+}
+
+/* VAŽNO: izbornici / popoveri */
+[role="menu"],
+[role="listbox"],
+[data-radix-popper-content-wrapper],
+[data-radix-menu-content],
+[data-radix-dropdown-menu-content],
+div[class*="dropdown"],
+div[class*="Dropdown"],
+div[class*="popover"],
+div[class*="Popover"] {
+  background-color: #1a1a1a !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  z-index: 2147482000 !important;
+  color: #f0f0f0 !important;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55) !important;
+}
+
+[role="menu"] *,
+[role="listbox"] *,
+[data-radix-menu-content] *,
+[data-radix-dropdown-menu-content] * {
+  opacity: 1 !important;
+  color: inherit;
+}
+
+img.oriphiel-model-icon {
+  width: 36px !important;
+  height: 36px !important;
+  object-fit: contain !important;
+  opacity: 1 !important;
+  filter: brightness(1.5) contrast(1.25) !important;
+  background: transparent !important;
+  display: inline-block !important;
+  visibility: visible !important;
+}
+
+.oriphiel-hero-name {
+  font-family: "Sora", system-ui, sans-serif !important;
+  font-size: 1.45rem !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+  color: #f5f5f5 !important;
+  white-space: nowrap !important;
+}
+
+.oriphiel-model-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* OWUI model profile = lijevi duplikat — sakrij dok nije keep */
+img[src*="/api/v1/models/model/profile/image"]:not([data-oriphiel-keep="1"]),
+img[data-oriphiel-kill="1"],
+img.oriphiel-model-icon:not([data-oriphiel-keep="1"]),
+img.oriphiel-model-icon:not(:has(+ .oriphiel-hero-name)):not(#oriphiel-topbar img):not(form img):not(aside img),
+*:has(> .oriphiel-icon-row) > *:not(.oriphiel-icon-row) img:not([data-oriphiel-keep="1"]),
+*:has(> .oriphiel-icon-row) > img:not([data-oriphiel-keep="1"]),
+.oriphiel-icon-row > img:not([data-oriphiel-keep="1"]),
+/* sibling avatar (size-9) pored reda s Oriphiel AI */
+*:has(> .oriphiel-icon-row) > img.size-9,
+*:has(> .oriphiel-icon-row) > img.rounded-2xl:not([data-oriphiel-keep="1"]) {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  max-width: 0 !important;
+  max-height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+  position: absolute !important;
+  left: -9999px !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+
+/* Jedini keep — logo odmah ispred Oriphiel AI */
+img[data-oriphiel-keep="1"],
+img.oriphiel-model-icon:has(+ .oriphiel-hero-name) {
+  display: inline-block !important;
+  width: 36px !important;
+  height: 36px !important;
+  max-width: 36px !important;
+  max-height: 36px !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  position: static !important;
+  left: auto !important;
+  overflow: visible !important;
+  pointer-events: none !important;
+  filter: brightness(1.5) contrast(1.25) !important;
+}
+
+/* Mobilni — čitljivost, bez lomljenja layouta */
+@media (max-width: 768px) {
+  :root {
+    --oriphiel-topbar-h: 2.85rem;
+    --oriphiel-bottom-gap: 1.35rem;
+  }
+
+  html.dark body,
+  body {
+    padding: 0 !important;
+    -webkit-text-size-adjust: 100% !important;
+    text-size-adjust: 100% !important;
+  }
+
+  #app,
+  #root {
+    margin-top: var(--oriphiel-topbar-h) !important;
+    height: calc(100dvh - var(--oriphiel-topbar-h)) !important;
+    max-height: calc(100dvh - var(--oriphiel-topbar-h)) !important;
+    padding-bottom: var(--oriphiel-bottom-gap) !important;
+  }
+
+  #oriphiel-pattern .oriphiel-wm-img {
+    top: 40% !important;
+    width: min(78vw, 420px) !important;
+    opacity: 0.12 !important;
+    filter: brightness(1.35) contrast(1.1) !important;
+  }
+
+  #oriphiel-topbar {
+    left: 0 !important;
+    right: 0 !important;
+    padding: 0.55rem 0.75rem 0.55rem 3rem !important;
+    min-height: 2.6rem !important;
+    font-size: 0.95rem !important;
+    justify-content: flex-start !important;
+    text-align: left !important;
+    background: rgba(8, 8, 8, 0.98) !important;
+  }
+
+  #oriphiel-topbar img {
+    width: 26px !important;
+    height: 26px !important;
+  }
+
+  #oriphiel-topbar .oriphiel-tagline {
+    display: none !important;
+  }
+
+  .oriphiel-hero-name {
+    font-size: clamp(1.15rem, 5.2vw, 1.35rem) !important;
+    white-space: normal !important;
+    color: #ffffff !important;
+  }
+
+  img.oriphiel-model-icon {
+    width: 40px !important;
+    height: 40px !important;
+    filter: brightness(1.35) contrast(1.15) !important;
+  }
+
+  textarea,
+  [contenteditable="true"] {
+    font-size: 16px !important;
+  }
+
+  #oriphiel-mobile-send {
+    position: fixed !important;
+    right: 0.85rem !important;
+    bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px)) !important;
+    z-index: 2147482500 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    min-width: 5.5rem !important;
+    min-height: 2.75rem !important;
+    padding: 0.55rem 1rem !important;
+    border: 0 !important;
+    border-radius: 999px !important;
+    background: #f5f5f5 !important;
+    color: #111 !important;
+    font-size: 0.95rem !important;
+    font-weight: 700 !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45) !important;
+  }
+}
+
+@media (min-width: 769px) {
+  #oriphiel-mobile-send {
+    display: none !important;
+  }
+}
+
+@media (max-width: 400px) {
+  #oriphiel-topbar {
+    font-size: 0.88rem !important;
+    padding-left: 2.75rem !important;
+  }
+
+  #oriphiel-topbar a {
+    display: none !important;
+  }
+}

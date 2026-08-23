@@ -1,0 +1,67 @@
+# Ravnopar — SEO vodič
+
+Tehnički SEO je ugrađen u frontend build. Ovo je checklist za organski promet.
+
+## Što je već implementirano
+
+- **Meta tagovi** po stranici (title, description, robots)
+- **Open Graph + Twitter Card** za dijeljenje linkova
+- **Canonical URL** + **hreflang** za 13 jezika (`/de/pomoc`, `/hr/planovi`, …)
+- **SSR prerender** — 130 statičnih HTML stranica pri buildu (bez Puppeteera)
+- **JSON-LD**: Organization, WebSite, WebApplication (početna), FAQPage (`/pomoc`)
+- **`robots.txt`** — blokira `/app/`, `/auth`, `/admin`
+- **`sitemap.xml`** — generira se pri buildu (10 javnih ruta × 13 jezika = 130 URL-ova)
+- **Javne stranice**: `/`, `/planovi`, `/pomoc`, `/kako-radi-feed`, `/fer-izvjestaj`, `/doniraj`, `/kontakt`, `/pravila`, `/privatnost`, `/uvjeti`
+
+## Env
+
+| Key | Vrijednost |
+|-----|------------|
+| `VITE_SITE_URL` | `https://ravnopar.oriph.io` |
+
+Migracija s `onrender.com`: vidi [SEO-MIGRATION-ORIPH.md](./SEO-MIGRATION-ORIPH.md).
+
+## Google Search Console (obavezno)
+
+1. [search.google.com/search-console](https://search.google.com/search-console)
+2. Dodaj property: `https://ravnopar.oriph.io` (zadrži i stari `ravnopar.onrender.com`)
+3. Verifikacija: DNS TXT ili HTML tag
+4. **Sitemaps** → pošalji: `https://ravnopar.oriph.io/sitemap.xml`
+5. **URL inspection** → zatraži indeksiranje `/hr` i `/`
+
+## Bing Webmaster Tools (opcionalno)
+
+[bing.com/webmasters](https://www.bing.com/webmasters) — isti sitemap.
+
+## Ograničenja (SPA)
+
+Klijentski React i dalje hidrira stranicu nakon učitavanja, ali **javne stranice imaju prerenderirani HTML** u `dist/{lang}/.../index.html` — Google odmah vidi naslove, tekst i FAQ.
+
+Stare URL-ove s `?lang=` automatski preusmjeravamo na `/de/pomoc` itd.
+
+## Nakon deploya
+
+U Search Console **ponovno pošalji** `sitemap.xml` (URL-ovi sada koriste jezične prefikse, npr. `/hr/pomoc` umjesto `?lang=hr`).
+
+## Što još pomaže (ručno, besplatno)
+
+1. **Lokaliziraj sadržaj** — ne samo UI, nego FAQ i landing copy po jeziku
+2. **Blog / vodiči** — „ghosting”, „besplatno upoznavanje”, „fer feed”
+3. **Backlinkovi** — mediji, forumi, Product Hunt
+4. **Brzina** — Render static site je OK; prati Core Web Vitals u Search Console
+
+## Korisni upiti za praćenje (primjeri)
+
+- HR: fer upoznavanje, dating bez pretplate, ghosting upoznavanje
+- DE: faires dating, dating ohne paywall
+- PL: uczciwe randki, randki bez paywalla
+- EN: fair dating app, no paywall dating
+
+## Provjera nakon deploya
+
+```bash
+curl https://ravnopar.oriph.io/robots.txt
+curl https://ravnopar.oriph.io/sitemap.xml
+```
+
+U pregledniku: View Source na `/pomoc?lang=de` — nakon učitavanja provjeri `<title>` i canonical u DevTools → Elements.
