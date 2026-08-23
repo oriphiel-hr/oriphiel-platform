@@ -1,8 +1,41 @@
 # Ad-hoc SQL — Messaging (Postgres `oriphiel`)
 
-Uvijek koristi PowerShell here-string `@"` … `"@` — prilagodi upit po potrebi.
+Host: **srv1890026** (`186.240.157.80`) · container `oriphiel-postgres` · baza `oriphiel`
 
-**Setup (jednom po sesiji, s Windowsa):**
+---
+
+## Gdje si? (obavezno `cd`)
+
+| Okolina | Direktorij |
+|---------|------------|
+| **Windows** | `C:\GIT_PROJEKTI\oriphiel-platform\scripts\oriphiel_messaging` |
+| **VPS (SSH bash)** | `/root/oriphiel-ai/oriphiel_messaging` |
+| SQL batch (VPS) | `/root/oriphiel-ai/oriphiel_messaging/sql/useful-selects.sql` |
+
+---
+
+## VPS — bash (preporučeno u SSH sesiji)
+
+```bash
+ssh root@186.240.157.80
+cd /root/oriphiel-ai/oriphiel_messaging
+```
+
+```bash
+docker exec -i oriphiel-postgres psql -U oriphiel -d oriphiel -c "
+SELECT count(*) FROM messages;
+"
+```
+
+```bash
+docker exec -i oriphiel-postgres psql -U oriphiel -d oriphiel -f - < sql/useful-selects.sql
+bash check-messaging.sh
+pwsh -File ./Check-OriphielMessaging.ps1 -Local
+```
+
+---
+
+## Windows — PowerShell + `@"` … `"@`
 
 ```powershell
 cd C:\GIT_PROJEKTI\oriphiel-platform\scripts\oriphiel_messaging
@@ -10,7 +43,7 @@ cd C:\GIT_PROJEKTI\oriphiel-platform\scripts\oriphiel_messaging
 
 **Pokretanje:** `Invoke-OriphielSql.ps1 -Sql @" ... "@`
 
-Batch file (bez prilagodbe): [`messaging-useful.sql`](messaging-useful.sql) · deploy: `scripts/oriphiel_messaging/sql/useful-selects.sql`
+Batch: [`messaging-useful.sql`](messaging-useful.sql)
 
 ---
 

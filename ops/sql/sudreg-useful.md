@@ -1,24 +1,96 @@
 # Ad-hoc SQL — Sudreg (Postgres `sudreg`)
 
-Uvijek koristi PowerShell here-string `@"` … `"@` — prilagodi upit po potrebi.
+Host: **srv1890026** (`186.240.157.80`) · container `oriphiel-postgres` · baza `sudreg`
 
-**Setup (jednom po sesiji, s Windowsa):**
+---
+
+## Gdje si? (obavezno `cd`)
+
+| Okolina | Direktorij | Napomena |
+|---------|------------|----------|
+| **Windows** | `C:\GIT_PROJEKTI\oriphiel-platform\scripts\sudreg` | PowerShell |
+| **VPS (SSH bash)** | `/opt/oriphiel-ai/scripts/sudreg` | **ne** `~/scripts/...` |
+| SQL batch file (VPS) | `/opt/oriphiel-ai/scripts/sudreg/sql/useful-selects.sql` | `.sql`, ne `.sq` |
+| Podaci (VPS) | `/opt/oriphiel-ai/data/sudreg/` | JSON cache, logovi |
+
+> **`Invoke-SudregPsql` ne radi u bashu** (`command not found`). To je PowerShell funkcija.  
+> Na VPS-u u SSH sesiji koristi **docker psql** (ispod) ili **`pwsh`** s punom putanjom.
+
+---
+
+## VPS — bash (preporučeno kad si već na SSH)
+
+```bash
+ssh root@186.240.157.80
+cd /opt/oriphiel-ai/scripts/sudreg
+```
+
+Jedan upit (prilagodi SQL):
+
+```bash
+docker exec -i oriphiel-postgres psql -U oriphiel -d sudreg -c "
+SELECT id, timestamp, available_until, imported_at
+FROM snapshots
+ORDER BY id DESC
+LIMIT 15;
+"
+```
+
+Cijeli useful-selects file:
+
+```bash
+cd /opt/oriphiel-ai/scripts/sudreg
+docker exec -i oriphiel-postgres psql -U oriphiel -d sudreg -f - < sql/useful-selects.sql
+```
+
+Check skripta (PowerShell na VPS-u):
+
+```bash
+cd /opt/oriphiel-ai/scripts/sudreg
+pwsh -File ./Check-Sudreg.ps1 -Local -DbDetail
+pwsh -File ./Check-Sudreg.ps1 -Local -RunUsefulSql
+```
+
+---
+
+## VPS — pwsh + `@"` (isti oblik kao Windows)
+
+```bash
+cd /opt/oriphiel-ai/scripts/sudreg
+pwsh
+```
+
+U **pwsh** promptu (ne u bashu):
+
+```powershell
+. ./SudregPg.ps1
+Invoke-SudregPsql -Local -Sql @"
+SELECT id, timestamp, available_until, imported_at
+FROM snapshots
+ORDER BY id DESC
+LIMIT 15;
+"@
+```
+
+---
+
+## Windows — PowerShell + `@"` … `"@`
 
 ```powershell
 cd C:\GIT_PROJEKTI\oriphiel-platform\scripts\sudreg
 . .\SudregPg.ps1
-# Na VPS-u dodaj: -Local
 ```
 
-**Pokretanje:** `Invoke-SudregPsql -Sql @" ... "@`  
-**Na VPS-u:** `Invoke-SudregPsql -Local -Sql @" ... "@`
+**Pokretanje:** `Invoke-SudregPsql -Sql @" ... "@` (SSH na VPS)  
+**Lokalno na VPS-u:** dodaj `-Local`
 
-Batch file: [`sudreg-useful.sql`](sudreg-useful.sql) · deploy: `scripts/sudreg/sql/useful-selects.sql`  
-Ili: `Check-Sudreg.ps1 -RunUsefulSql`
+Batch file: [`sudreg-useful.sql`](sudreg-useful.sql) · deploy: `scripts/sudreg/sql/useful-selects.sql`
 
 ---
 
 ## Napredak / sync
+
+Primjeri ispod: **Windows** (`Invoke-SudregPsql`). Na VPS-u u **pwsh** dodaj `-Local`, ili koristi **bash docker** primjer iz uvoda.
 
 ```powershell
 Invoke-SudregPsql -Sql @"
@@ -202,9 +274,10 @@ SELECT * FROM company_financial_reports WHERE mbs = '080000000';
 
 ---
 
-## Na VPS-u (isti SQL, bash)
+## Brzi bash (VPS) — kopiraj isti SQL
 
 ```bash
+cd /opt/oriphiel-ai/scripts/sudreg
 docker exec -i oriphiel-postgres psql -U oriphiel -d sudreg -c "
 SELECT key, left(value, 100) AS value, updated_at FROM sync_state ORDER BY key;
 "

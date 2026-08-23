@@ -7,6 +7,37 @@ Data (VPS): `/opt/oriphiel-ai/data/sudreg/`
 
 ---
 
+## Na VPS-u (SSH bash) — prvo `cd`
+
+```bash
+ssh root@186.240.157.80
+cd /opt/oriphiel-ai/scripts/sudreg
+```
+
+**Ne radi u bashu:** `Invoke-SudregPsql` → `command not found`
+
+**Radi:**
+
+```bash
+# Jedan SQL upit
+docker exec -i oriphiel-postgres psql -U oriphiel -d sudreg -c "
+SELECT id, timestamp, available_until, imported_at
+FROM snapshots ORDER BY id DESC LIMIT 15;
+"
+
+# Cijeli useful-selects
+docker exec -i oriphiel-postgres psql -U oriphiel -d sudreg -f - < sql/useful-selects.sql
+
+# Check skripta
+pwsh -File ./Check-Sudreg.ps1 -Local -DbDetail
+```
+
+**pwsh + `@"`:** `cd /opt/oriphiel-ai/scripts/sudreg` → `pwsh` → `. ./SudregPg.ps1` → `Invoke-SudregPsql -Local -Sql @"..."@`
+
+Više: [`../sql/sudreg-useful.md`](../sql/sudreg-useful.md)
+
+---
+
 ## Status / check
 
 ```powershell

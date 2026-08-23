@@ -1,31 +1,47 @@
 # Ad-hoc SQL — Ravnopar (MySQL)
 
-Uvijek koristi PowerShell here-string `@"` … `"@` — prilagodi upit po potrebi.
+Host: **srv1889799** (`186.240.157.39`) · baza `ravnopar`
 
-**Setup (s Windowsa → Ravnopar VPS):**
+---
+
+## Gdje si? (obavezno `cd`)
+
+| Okolina | Direktorij |
+|---------|------------|
+| **Windows (kod)** | `C:\GIT_PROJEKTI\oriphiel-platform\ravnopar` |
+| **VPS (SSH bash)** | `/var/www/Render/ravnopar` |
+| Backend (VPS) | `/var/www/Render/ravnopar/backend` |
+
+> Lozinka/user baze → **Bitwarden**
+
+---
+
+## VPS — bash (preporučeno u SSH sesiji)
+
+```bash
+ssh root@186.240.157.39
+cd /var/www/Render/ravnopar
+```
+
+```bash
+mysql -u ravnopar -p ravnopar -e "
+SELECT COUNT(*) FROM UserProfile;
+"
+```
+
+---
+
+## Windows — PowerShell + `@"` (preko SSH)
 
 ```powershell
 $Ssh = "root@186.240.157.39"
-# Lozinka/user baze → Bitwarden (ne u git)
-```
-
-**Pokretanje (SQL u `$Sql`, pa ssh + mysql):**
-
-```powershell
 $Sql = @"
 SELECT COUNT(*) AS n FROM UserProfile;
 "@
 ssh $Ssh "mysql -N -e `"$($Sql -replace '"','\"' -replace "`r?`n",' ')`" ravnopar"
 ```
 
-Jednostavnije — zalijepi SQL na VPS-u:
-
-```powershell
-ssh root@186.240.157.39
-# zatim: mysql -u … -p ravnopar
-```
-
-Batch: [`ravnopar-mysql.sql`](ravnopar-mysql.sql) · schema: `ravnopar/backend/prisma/schema.prisma`
+Batch: [`ravnopar-mysql.sql`](ravnopar-mysql.sql)
 
 ---
 

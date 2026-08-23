@@ -10,6 +10,31 @@ Jedan ulaz za SQL, PowerShell, bash i runbookove.
 
 ---
 
+## VPS putanje (srv1890026 — `186.240.157.80`)
+
+| Servis | `cd` na VPS-u |
+|--------|----------------|
+| Sudreg skripte + SQL | `/opt/oriphiel-ai/scripts/sudreg` |
+| Sudreg podaci | `/opt/oriphiel-ai/data/sudreg` |
+| Messaging | `/root/oriphiel-ai/oriphiel_messaging` |
+
+**U bash SSH sesiji** ne koristi `Invoke-SudregPsql` — to je PowerShell.  
+Koristi `docker exec … psql` ili `pwsh -File …Check-Sudreg.ps1 -Local`.
+
+Primjer (tvoj upit):
+
+```bash
+cd /opt/oriphiel-ai/scripts/sudreg
+docker exec -i oriphiel-postgres psql -U oriphiel -d sudreg -c "
+SELECT id, timestamp, available_until, imported_at
+FROM snapshots
+ORDER BY id DESC
+LIMIT 15;
+"
+```
+
+---
+
 ## Projekti
 
 | Projekt | Kod | GitHub | VPS |

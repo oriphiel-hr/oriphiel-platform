@@ -4,16 +4,28 @@ Kopiraj naredbe na SSH sesiju. Hostovi: [`../../infra/hosts.yaml`](../../infra/h
 
 ---
 
-## Oriphiel AI VPS (`186.240.157.80`)
+## Oriphiel AI VPS (`186.240.157.80` / srv1890026)
 
 ```bash
-# SSH
 ssh root@186.240.157.80
+```
 
-# Docker / Postgres
-docker ps --format 'table {{.Names}}\t{{.Status}}'
+| Što | Direktorij |
+|-----|------------|
+| Sudreg | `cd /opt/oriphiel-ai/scripts/sudreg` |
+| Messaging | `cd /root/oriphiel-ai/oriphiel_messaging` |
+
+```bash
+# Docker / Postgres — Sudreg (primjer: snapshoti)
+cd /opt/oriphiel-ai/scripts/sudreg
+docker exec -i oriphiel-postgres psql -U oriphiel -d sudreg -c "
+SELECT id, timestamp, available_until, imported_at
+FROM snapshots ORDER BY id DESC LIMIT 15;
+"
+
 docker exec -i oriphiel-postgres psql -U oriphiel -d oriphiel -c 'SELECT count(*) FROM messages;'
 docker exec -i oriphiel-postgres psql -U oriphiel -d sudreg -c 'SELECT count(*) FROM companies;'
+docker ps --format 'table {{.Names}}\t{{.Status}}'
 
 # Ollama
 curl -s http://127.0.0.1:11434/api/tags | head
@@ -35,7 +47,9 @@ du -sh /var/lib/oriphiel/attachments/email/* 2>/dev/null | head
 ls /var/lib/oriphiel/attachments/email/ | head
 
 # Sudreg
-pwsh -File /opt/oriphiel-ai/scripts/sudreg/Check-Sudreg.ps1 -Local -StatusOnly
+cd /opt/oriphiel-ai/scripts/sudreg
+pwsh -File ./Check-Sudreg.ps1 -Local -StatusOnly
+docker exec -i oriphiel-postgres psql -U oriphiel -d sudreg -f - < sql/useful-selects.sql
 ls -la /opt/oriphiel-ai/data/sudreg/ | head
 ```
 
