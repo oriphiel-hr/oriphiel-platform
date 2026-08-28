@@ -1,7 +1,11 @@
+import path from 'path';
+import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
-// .env on VPS is source of truth — PM2 keeps stale env across `restart` unless we override.
-dotenv.config({ override: true });
+const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Always load backend/.env (PM2/npm cwd can differ from backend root).
+dotenv.config({ path: path.join(backendRoot, '.env'), override: true });
+
 import express from 'express';
 import cors from 'cors';
 import { matchmakingRouter } from './routes/matchmaking.js';
