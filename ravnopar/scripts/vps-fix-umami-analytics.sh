@@ -112,6 +112,29 @@ http_json() {
   curl "${args[@]}"
 }
 
+patch_umami_service() {
+  local umami_js="$BE/src/services/umami-service.js"
+  [[ -f "$umami_js" ]] || fail "Nema $umami_js"
+
+  if grep -q 'const static = staticToken()' "$umami_js" 2>/dev/null; then
+    info "Patcham umami-service.js (const static je rezervirana riječ u ES modulu)..."
+    cp -a "$umami_js" "${umami_js}.bak.$(date +%Y%m%d%H%M%S)"
+    sed -i \
+      -e 's/const static = staticToken()/const tokenFromEnv = staticToken()/g' \
+      -e 's/return static || null/return tokenFromEnv || null/g' \
+      "$umami_js"
+  fi
+
+  if ! grep -q 'loginToUmami' "$umami_js" 2>/dev/null; then
+    warn "umami-service.js nema loginToUmami — pokreni Fix-UmamiOnVps.ps1 s laptopa da uploada novu verziju."
+  fi
+
+  info "Syntax check umami-service.js..."
+  node -e "import('file://${umami_js}')" >/dev/null 2>&1 \
+    || fail "umami-service.js ima syntax grešku — vidi pm2 logs ravnopar-api"
+  info "umami-service.js OK."
+}
+
 patch_index_dotenv() {
   [[ -f "$INDEX" ]] || fail "Nema $INDEX"
 
@@ -222,6 +245,7 @@ if [[ -z "${UMAMI_PASS:-}" ]]; then
 fi
 [[ -n "$UMAMI_PASS" ]] || fail "Lozinka je prazna."
 
+patch_umami_service
 patch_index_dotenv
 
 info "Umami login ($UMAMI_BASE)..."
