@@ -97,9 +97,23 @@ Zatim u Umami UI: promijeni default lozinku (`admin` / `umami`) → dodaj websit
 | **ravnopar-web** | `NEXT_PUBLIC_UMAMI_WEBSITE_ID` | UUID websitea |
 | **ravnopar-api** | `UMAMI_BASE_URL` | `https://analytics.ravnopar.com` |
 | **ravnopar-api** | `UMAMI_WEBSITE_ID` | isti UUID |
-| **ravnopar-api** | `UMAMI_API_TOKEN` | API token / JWT |
+| **ravnopar-api** | `UMAMI_USERNAME` / `UMAMI_PASSWORD` | **preporučeno** (token se osvježava sam) |
+| **ravnopar-api** | `UMAMI_API_TOKEN` | opcionalno; JWT na self-hostu **ističe** |
 | **ravnopar-api** | `UMAMI_SHARE_URL` | opcionalno, share link za iframe |
 | **ravnopar-api** | `UMAMI_SITE_LABEL` | `ravnopar.com` |
+
+Ako Admin pokaže **Invalid token**: u `backend/.env` stavi Umami login umjesto starog tokena, pa restart API-ja:
+
+```bash
+cd /var/www/Render/ravnopar/backend
+# u .env:
+# UMAMI_USERNAME=admin
+# UMAMI_PASSWORD=tvoja-umami-lozinka
+# (UMAMI_API_TOKEN možeš obrisati ili ostaviti — login ima prednost)
+pm2 restart ravnopar-api --update-env
+```
+
+Ili jednokratno osvježi token skriptom: `bash scripts/vps-fix-umami-analytics.sh`
 
 Nakon env: `npm run build` u `frontend-next` + `pm2 restart ravnopar-web ravnopar-api --update-env`.
 

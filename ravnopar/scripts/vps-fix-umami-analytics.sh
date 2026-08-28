@@ -111,27 +111,58 @@ info "Token dobiven (${#TOKEN} znakova)."
 info "Dohvat website liste..."
 WEBSITES_JSON=$(http_json GET "$UMAMI_BASE/api/websites" "" "$TOKEN") || fail "GET /api/websites nije uspio."
 
-WEBSITE_ID=$(node - "$WEBSITES_JSON" "$SITE_DOMAIN" <<'PY'
-const list = JSON.parse(process.argv[1]);
-const domain = process.argv[2].toLowerCase();
-const rows = Array.isArray(list) ? list : (list.data || []);
-const hit = rows.find((w) => {
-  const d = String(w.domain || w.name || "").toLowerCase();
-  return d === domain || d.includes(domain);
+WEBSITES_TMP=$(mktemp)
+trap 'rm -f "$WEBSITES_TMP"' EXIT
+printf '%s' "$WEBSITES_JSON" > "$WEBSITES_TMP"
+
+WEBSITE_ID=$(node - "$WEBSITES_TMP" "$SITE_DOMAIN" <<'PY'
+const fs = require('fs');
+const raw = fs.readFileSync(process.argv[1], 'utf8').trim();
+if (!raw || raw[0] !== '{' && raw[0] !== '[') {
+  console.error('Unexpected /api/websites body:', raw.slice(0, 200));
+  process.exit(2);
+}
+let list;
+try {
+  list = JSON.parse(raw);
+} catch (e) {
+  console.error('JSON parse failed:', e.message);
+  process.exit(2);
+}
+const want = (process.argv[2] || 'ravnopar.com').toLowerCase().replace(/^www\./, '');
+const base = want.replace(/\.(com|hr|io)$/, '');
+const rows = Array.isArray(list)
+  ? list
+  : (list.data || list.websites || list.results || []);
+const norm = (w) => String(w.domain || w.name || w.url || '').toLowerCase().replace(/^www\./, '');
+let hit = rows.find((w) => {
+  const d = norm(w);
+  return d === want || d.includes(want) || want.includes(d) || d.startsWith(base);
 });
-if (!hit) process.exit(2);
-process.stdout.write(hit.id || hit.websiteId || "");
+if (!hit && rows.length === 1) hit = rows[0];
+if (!hit) {
+  rows.forEach((w) => console.error('-', w.id || w.websiteId, '|', w.domain || w.name));
+  process.exit(2);
+}
+process.stdout.write(String(hit.id || hit.websiteId || hit.uuid || ''));
 PY
 ) || true
 
 if [[ -z "${WEBSITE_ID:-}" ]]; then
   warn "Website '$SITE_DOMAIN' nije pronađen automatski."
   echo "Dostupni websiteovi:"
-  node -e "
-const list = JSON.parse(process.argv[1]);
-const rows = Array.isArray(list) ? list : (list.data || []);
-rows.forEach(w => console.log('-', w.id, '|', w.domain || w.name));
-" "$WEBSITES_JSON"
+  node - "$WEBSITES_TMP" <<'PY'
+const fs = require('fs');
+const raw = fs.readFileSync(process.argv[1], 'utf8').trim();
+try {
+  const list = JSON.parse(raw);
+  const rows = Array.isArray(list) ? list : (list.data || list.websites || list.results || []);
+  rows.forEach((w) => console.log('-', w.id || w.websiteId, '|', w.domain || w.name));
+} catch (e) {
+  console.error('Ne mogu parsirati /api/websites:', e.message);
+  console.error(raw.slice(0, 300));
+}
+PY
   read -r -p "Upiši Website ID (UUID): " WEBSITE_ID
 fi
 
@@ -156,6 +187,8 @@ info "Stats API OK (visitors: $(node -e "const d=JSON.parse(process.argv[1]); co
 info "Ažuriram backend/.env..."
 ensure_env_line "$BE/.env" UMAMI_BASE_URL "$UMAMI_BASE"
 ensure_env_line "$BE/.env" UMAMI_WEBSITE_ID "$WEBSITE_ID"
+ensure_env_line "$BE/.env" UMAMI_USERNAME "$UMAMI_USER"
+ensure_env_line "$BE/.env" UMAMI_PASSWORD "$UMAMI_PASS"
 ensure_env_line "$BE/.env" UMAMI_API_TOKEN "$TOKEN"
 ensure_env_line "$BE/.env" UMAMI_SITE_LABEL "$SITE_LABEL"
 

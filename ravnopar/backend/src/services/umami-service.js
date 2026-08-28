@@ -92,9 +92,9 @@ async function loginToUmami() {
 }
 
 async function resolveToken(forceRefresh = false) {
-  const tokenFromEnv = staticToken();
   const creds = loginCredentials();
 
+  // Login credentials are preferred: static JWT/API tokens expire on self-hosted Umami.
   if (creds) {
     if (
       !forceRefresh &&
@@ -106,7 +106,7 @@ async function resolveToken(forceRefresh = false) {
     return loginToUmami();
   }
 
-  return tokenFromEnv || null;
+  return staticToken() || null;
 }
 
 async function umamiGet(path, query = {}, tokenOverride = null) {
@@ -123,7 +123,9 @@ async function umamiGet(path, query = {}, tokenOverride = null) {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
   });
 
-  if (res.status === 401 && loginCredentials() && !tokenOverride) {
+  // Expired static token → try live login if username/password are configured
+  if (res.status === 401 && !tokenOverride && loginCredentials()) {
+    cachedLogin = null;
     token = await resolveToken(true);
     res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }
@@ -132,7 +134,13 @@ async function umamiGet(path, query = {}, tokenOverride = null) {
 
   if (!res.ok) {
     const text = await res.text();
-    const err = new Error(`Umami API ${res.status}: ${text.slice(0, 200)}`);
+    let message = `Umami API ${res.status}: ${text.slice(0, 200)}`;
+    if (res.status === 401 || /invalid token/i.test(text)) {
+      message =
+        'Invalid token — postavi UMAMI_USERNAME + UMAMI_PASSWORD u backend/.env ' +
+        '(statični UMAMI_API_TOKEN na self-host Umamiju ističe).';
+    }
+    const err = new Error(message);
     err.status = res.status;
     throw err;
   }

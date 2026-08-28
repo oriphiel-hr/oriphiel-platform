@@ -1273,9 +1273,9 @@ export default {
     analyticsOptOutActive: "Analytics is disabled in this browser — your clicks are not sent to Umami.",
     analyticsOpenExternal: "Open in Umami",
     analyticsNotConfigured:
-      "Umami is not connected. Set UMAMI_BASE_URL, UMAMI_WEBSITE_ID and UMAMI_API_TOKEN on the backend (VPS → backend/.env).",
+      "Umami is not connected. Set UMAMI_BASE_URL, UMAMI_WEBSITE_ID and UMAMI_USERNAME + UMAMI_PASSWORD on the backend (VPS → backend/.env). Static API tokens expire.",
     analyticsPartialConfig:
-      "Set UMAMI_API_TOKEN for numbers or UMAMI_SHARE_URL for the embedded dashboard.",
+      "Set UMAMI_USERNAME/PASSWORD for numbers or UMAMI_SHARE_URL for the embedded dashboard.",
     analyticsVisitorsToday: "Visitors (today)",
     analyticsPageviewsToday: "Pageviews (today)",
     analyticsActiveNow: "Active now (5 min)",

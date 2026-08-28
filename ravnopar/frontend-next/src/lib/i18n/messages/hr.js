@@ -1357,9 +1357,9 @@ export default {
     analyticsOptOutActive: 'Analitika je isključena u ovom pregledniku — tvoji klikovi se ne šalju u Umami.',
     analyticsOpenExternal: 'Otvori u Umamiju',
     analyticsNotConfigured:
-      'Umami nije povezan. Na backendu postavi UMAMI_BASE_URL, UMAMI_WEBSITE_ID i UMAMI_API_TOKEN (VPS → backend/.env).',
+      'Umami nije povezan. Na backendu postavi UMAMI_BASE_URL, UMAMI_WEBSITE_ID i UMAMI_USERNAME + UMAMI_PASSWORD (VPS → backend/.env). Statični API token ističe.',
     analyticsPartialConfig:
-      'Postavi UMAMI_API_TOKEN za brojke ili UMAMI_SHARE_URL za ugrađeni dashboard.',
+      'Postavi UMAMI_USERNAME/PASSWORD za brojke ili UMAMI_SHARE_URL za ugrađeni dashboard.',
     analyticsVisitorsToday: 'Posjetitelji (danas)',
     analyticsPageviewsToday: 'Pregledi (danas)',
     analyticsActiveNow: 'Aktivno sada (5 min)',
