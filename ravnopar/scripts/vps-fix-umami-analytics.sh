@@ -17,13 +17,19 @@
 #
 set -euo pipefail
 
+clean_var() {
+  printf '%s' "$1" | tr -d '\r\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//'
+}
+
 APP=/var/www/Render/ravnopar
 BE="$APP/backend"
 FE="$APP/frontend-next"
-UMAMI_BASE="${UMAMI_BASE_URL:-https://analytics.ravnopar.com}"
+UMAMI_BASE="$(clean_var "${UMAMI_BASE_URL:-https://analytics.ravnopar.com}")"
 UMAMI_BASE="${UMAMI_BASE%/}"
-SITE_DOMAIN="${UMAMI_SITE_DOMAIN:-ravnopar.com}"
-SITE_LABEL="${UMAMI_SITE_LABEL:-ravnopar.com}"
+SITE_DOMAIN="$(clean_var "${UMAMI_SITE_DOMAIN:-ravnopar.com}")"
+SITE_LABEL="$(clean_var "${UMAMI_SITE_LABEL:-ravnopar.com}")"
+# Known production website — used when auto-detect fails over non-interactive SSH.
+DEFAULT_WEBSITE_ID="$(clean_var "${UMAMI_DEFAULT_WEBSITE_ID:-0c0daf08-e152-4f26-93f4-1a01add4c12c}")"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -106,6 +112,7 @@ if echo "$LOGIN_JSON" | grep -q '"error"'; then
 fi
 
 TOKEN=$(json_field "$LOGIN_JSON" "d.token") || fail "Nema tokena u login odgovoru."
+TOKEN=$(clean_var "$TOKEN")
 info "Token dobiven (${#TOKEN} znakova)."
 
 info "Dohvat website liste..."
@@ -115,10 +122,10 @@ WEBSITES_TMP=$(mktemp)
 trap 'rm -f "$WEBSITES_TMP"' EXIT
 printf '%s' "$WEBSITES_JSON" > "$WEBSITES_TMP"
 
-WEBSITE_ID=$(node - "$WEBSITES_TMP" "$SITE_DOMAIN" <<'PY'
+WEBSITE_ID=$(WEBSITES_TMP="$WEBSITES_TMP" SITE_DOMAIN="$SITE_DOMAIN" node <<'PY'
 const fs = require('fs');
-const raw = fs.readFileSync(process.argv[1], 'utf8').trim();
-if (!raw || raw[0] !== '{' && raw[0] !== '[') {
+const raw = fs.readFileSync(process.env.WEBSITES_TMP, 'utf8').trim();
+if (!raw || (raw[0] !== '{' && raw[0] !== '[')) {
   console.error('Unexpected /api/websites body:', raw.slice(0, 200));
   process.exit(2);
 }
@@ -129,7 +136,7 @@ try {
   console.error('JSON parse failed:', e.message);
   process.exit(2);
 }
-const want = (process.argv[2] || 'ravnopar.com').toLowerCase().replace(/^www\./, '');
+const want = (process.env.SITE_DOMAIN || 'ravnopar.com').toLowerCase().replace(/^www\./, '');
 const base = want.replace(/\.(com|hr|io)$/, '');
 const rows = Array.isArray(list)
   ? list
@@ -151,9 +158,9 @@ PY
 if [[ -z "${WEBSITE_ID:-}" ]]; then
   warn "Website '$SITE_DOMAIN' nije pronađen automatski."
   echo "Dostupni websiteovi:"
-  node - "$WEBSITES_TMP" <<'PY'
+  WEBSITES_TMP="$WEBSITES_TMP" node <<'PY'
 const fs = require('fs');
-const raw = fs.readFileSync(process.argv[1], 'utf8').trim();
+const raw = fs.readFileSync(process.env.WEBSITES_TMP, 'utf8').trim();
 try {
   const list = JSON.parse(raw);
   const rows = Array.isArray(list) ? list : (list.data || list.websites || list.results || []);
@@ -163,26 +170,38 @@ try {
   console.error(raw.slice(0, 300));
 }
 PY
-  read -r -p "Upiši Website ID (UUID): " WEBSITE_ID
+  if [[ -t 0 ]]; then
+    read -r -p "Upiši Website ID (UUID): " WEBSITE_ID
+  elif [[ -n "$DEFAULT_WEBSITE_ID" ]]; then
+    warn "Koristim poznati Website ID: $DEFAULT_WEBSITE_ID"
+    WEBSITE_ID="$DEFAULT_WEBSITE_ID"
+  fi
 fi
 
 [[ -n "$WEBSITE_ID" ]] || fail "Website ID je obavezan."
+WEBSITE_ID=$(clean_var "$WEBSITE_ID")
+[[ "$WEBSITE_ID" =~ ^[0-9a-fA-F-]{36}$ ]] || fail "Website ID nije valjan UUID: '$WEBSITE_ID'"
 info "Website ID: $WEBSITE_ID"
 
 END_MS=$(($(date +%s) * 1000))
 START_MS=$((END_MS - 7 * 24 * 60 * 60 * 1000))
 
 info "Test stats API..."
-STATS_JSON=$(http_json GET \
-  "$UMAMI_BASE/api/websites/$WEBSITE_ID/stats?startAt=$START_MS&endAt=$END_MS" \
-  "" "$TOKEN")
-
-if echo "$STATS_JSON" | grep -q '"error"'; then
-  echo "$STATS_JSON"
-  fail "Stats API vraća grešku — provjeri Website ID i token."
+STATS_URL="${UMAMI_BASE}/api/websites/${WEBSITE_ID}/stats"
+if ! STATS_JSON=$(curl -sS -G "$STATS_URL" \
+  -H "Accept: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  --data-urlencode "startAt=${START_MS}" \
+  --data-urlencode "endAt=${END_MS}"); then
+  warn "Stats API test nije uspio — nastavljam s upisom .env"
+  STATS_JSON=""
 fi
 
-info "Stats API OK (visitors: $(node -e "const d=JSON.parse(process.argv[1]); const v=d.visitors; process.stdout.write(v?.value ?? v ?? '?');" "$STATS_JSON"))."
+if [[ -n "$STATS_JSON" ]] && echo "$STATS_JSON" | grep -q '"error"'; then
+  warn "Stats API: $STATS_JSON"
+elif [[ -n "$STATS_JSON" ]]; then
+  info "Stats API OK (visitors: $(node -e "const d=JSON.parse(process.argv[1]); const v=d.visitors; process.stdout.write(v?.value ?? v ?? '?');" "$STATS_JSON"))."
+fi
 
 info "Ažuriram backend/.env..."
 ensure_env_line "$BE/.env" UMAMI_BASE_URL "$UMAMI_BASE"
@@ -203,18 +222,23 @@ info "Ažuriram frontend env ($FE_ENV)..."
 ensure_env_line "$FE_ENV" NEXT_PUBLIC_ANALYTICS_URL "$UMAMI_BASE/script.js"
 ensure_env_line "$FE_ENV" NEXT_PUBLIC_UMAMI_WEBSITE_ID "$WEBSITE_ID"
 
-info "Restart PM2..."
-pm2 restart ravnopar-api --update-env
+info "Restart PM2 (delete+start — PM2 inače drži stare UMAMI_* varijable)..."
+pm2 delete ravnopar-api 2>/dev/null || true
+pm2 start npm --name ravnopar-api --cwd "$BE" -- start
 pm2 restart ravnopar-web --update-env 2>/dev/null || warn "ravnopar-web nije pronađen — preskačem."
 pm2 save 2>/dev/null || true
+sleep 2
 
-info "Test admin analytics endpoint (lokalno)..."
-ANALYTICS=$(curl -sS "http://127.0.0.1:4200/api/admin/analytics" \
-  -H "Authorization: Bearer SKIP" 2>/dev/null || true)
-if [[ -n "$ANALYTICS" ]]; then
-  warn "Admin endpoint traži JWT — provjeri ručno u browseru na /admin."
+info "Provjera Umami tokena (stats API)..."
+if STATS_JSON=$(curl -sS -G "$STATS_URL" \
+  -H "Accept: application/json" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  --data-urlencode "startAt=${START_MS}" \
+  --data-urlencode "endAt=${END_MS}") && ! echo "$STATS_JSON" | grep -q '"error"'; then
+  info "Umami stats OK nakon restarta."
 else
-  warn "Nisam mogao testirati /api/admin/analytics bez admin JWT-a."
+  warn "Stats API još ne radi: ${STATS_JSON:-curl failed}"
+  warn "Provjeri: grep '^UMAMI_' $BE/.env && pm2 env ravnopar-api | grep UMAMI || true"
 fi
 
 echo

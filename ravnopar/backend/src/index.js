@@ -1,4 +1,7 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
+
+// .env on VPS is source of truth — PM2 keeps stale env across `restart` unless we override.
+dotenv.config({ override: true });
 import express from 'express';
 import cors from 'cors';
 import { matchmakingRouter } from './routes/matchmaking.js';

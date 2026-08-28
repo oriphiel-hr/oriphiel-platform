@@ -10,6 +10,7 @@ param(
 $ErrorActionPreference = "Stop"
 $localScript = Join-Path $PSScriptRoot "vps-fix-umami-analytics.sh"
 $localUmami = Join-Path (Split-Path $PSScriptRoot -Parent) "backend\src\services\umami-service.js"
+$localIndex = Join-Path (Split-Path $PSScriptRoot -Parent) "backend\src\index.js"
 
 if (-not (Test-Path $localScript)) { throw "Nema $localScript" }
 
@@ -39,10 +40,13 @@ if (-not $umamiPlain) { throw "Umami lozinka je prazna." }
 # bash single-quoted escape
 $escaped = $umamiPlain -replace "'", "'\\''"
 
-Write-Host "Upload (LF) skripte + umami-service.js..." -ForegroundColor Cyan
+Write-Host "Upload (LF) skripte + backend fix..." -ForegroundColor Cyan
 Send-UnixTextFile -LocalPath $localScript -RemoteDest "/tmp/vps-fix-umami-analytics.sh"
 if (Test-Path $localUmami) {
   Send-UnixTextFile -LocalPath $localUmami -RemoteDest "${RemoteApp}/backend/src/services/umami-service.js"
+}
+if (Test-Path $localIndex) {
+  Send-UnixTextFile -LocalPath $localIndex -RemoteDest "${RemoteApp}/backend/src/index.js"
 }
 
 $remoteCmd = "chmod +x /tmp/vps-fix-umami-analytics.sh && UMAMI_USER=admin UMAMI_PASS='$escaped' bash /tmp/vps-fix-umami-analytics.sh && rm -f /tmp/vps-fix-umami-analytics.sh"
