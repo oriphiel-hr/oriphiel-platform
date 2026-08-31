@@ -43,6 +43,35 @@ WHERE lower(ca.address) = 'mario.vitt@oriphiel.hr'
 GROUP BY m.status
 ORDER BY n DESC;
 
+-- Po folderu (aktivni)
+SELECT coalesce(m.folder,'(null)') AS folder, count(*) AS n
+FROM messages m
+JOIN channels_accounts ca ON ca.id = m.account_id
+WHERE lower(ca.address) = 'mario.vitt@oriphiel.hr'
+  AND m.deleted_at IS NULL
+GROUP BY m.folder
+ORDER BY n DESC;
+
+-- Soft-deleted
+SELECT m.id, m.folder, m.imap_uid, left(m.subject, 50) AS subject, m.deleted_at
+FROM messages m
+JOIN channels_accounts ca ON ca.id = m.account_id
+WHERE lower(ca.address) = 'mario.vitt@oriphiel.hr'
+  AND m.deleted_at IS NOT NULL
+ORDER BY m.deleted_at DESC
+LIMIT 20;
+
+-- Labele (FLAGS / Gmail)
+SELECT unnest(m.labels) AS label, count(*) AS n
+FROM messages m
+JOIN channels_accounts ca ON ca.id = m.account_id
+WHERE lower(ca.address) = 'mario.vitt@oriphiel.hr'
+  AND m.deleted_at IS NULL
+  AND cardinality(m.labels) > 0
+GROUP BY 1
+ORDER BY n DESC
+LIMIT 30;
+
 -- Po AI prioritetu
 SELECT coalesce(m.ai_priority,'(nema AI)') AS ai_priority, count(*) AS n
 FROM messages m

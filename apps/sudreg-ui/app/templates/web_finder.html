@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Pronađi web — Sudreg{% endblock %}
+{% block content %}
+<p><a href="/">← Pretraga</a></p>
+<h1>Pronađi / potvrdi web stranicu</h1>
+<p class="sub">
+  Traži kandidate (DuckDuckGo + email domena), zatim na stranicama (kontakt / o nama)
+  traži <strong>OIB</strong>, <strong>MBS</strong> i <strong>naziv</strong> radi potvrde.
+</p>
+
+<form class="filters" method="get" action="/web-finder" style="grid-template-columns: 1fr auto;">
+  <label>MBS tvrtke
+    <input type="text" name="mbs" value="{{ mbs }}" placeholder="npr. 060058436" required />
+  </label>
+  <button type="submit" name="run" value="1">Pronađi web</button>
+</form>
+
+{% if error %}
+<div class="err">{{ error }}</div>
+{% endif %}
+
+{% if company %}
+<div class="card" style="margin-bottom:1rem">
+  <h2 style="margin-top:0">{{ company.naziv or company.mbs }}</h2>
+  <dl class="kv">
+    <dt>MBS</dt><dd class="mono">{{ company.mbs }}</dd>
+    <dt>OIB</dt><dd class="mono">{{ company.oib or "—" }}</dd>
+    <dt>Email (Sudreg)</dt><dd>{% if company.email %}<a href="mailto:{{ company.email }}">{{ company.email }}</a>{% else %}—{% endif %}</dd>
+    <dt>Web (CRM)</dt><dd>
+      {% if company.crm_websites %}
+        {% for w in company.crm_websites %}
+          <div style="margin-bottom:.35rem">
+            {% if w.is_primary %}<strong>glavna:</strong>{% else %}<span class="muted">{{ w.role or 'dodatna' }}:</span>{% endif %}
+            <a href="{{ w.website if w.website.startswith('http') else 'https://' + w.website }}" target="_blank" rel="noopener">{{ w.website }}</a>
+          </div>
+        {% endfor %}
+      {% elif company.website and company.website_source == 'crm' %}
+        <a href="{{ company.website if company.website.startswith('http') else 'https://' + company.website }}" target="_blank" rel="noopener">{{ company.website }}</a>
+      {% else %}—{% endif %}
+    </dd>
+    <dt>Web (Sudreg)</dt><dd>
+      {% if company.sudreg_website %}
+        <a href="{{ company.sudreg_website if company.sudreg_website.startswith('http') else 'https://' + company.sudreg_website }}" target="_blank" rel="noopener">{{ company.sudreg_website }}</a>
+      {% else %}—{% endif %}
+    </dd>
+  </dl>
+  <p class="muted" style="margin:0.6rem 0 0;font-size:.85rem">
+    {% if ran %}Provjereno hostova: {{ find.candidates_checked }} · {{ find.queries_note }}{% else %}
+    Upiši MBS i klikni <strong>Pronađi web</strong> (može trajati 20–60 s).{% endif %}
+  </p>
+</div>
+{% endif %}
+
+{% if saved %}
+<div class="card" style="margin-bottom:1rem;border-color:#1a7a6d">
+  Spremljeno u <strong>CRM</strong> (<code>oriphiel_crm</code>):
+  <a href="{{ saved }}" target="_blank" rel="noopener">{{ saved }}</a>
+  · <a href="/company/{{ mbs }}#web">otvori detalj</a>
+</div>
+{% endif %}
+
+{% if ran and find %}
+  {% if find.results %}
+  <div class="panel">
+    <table>
+      <thead>
+        <tr>
+          <th>Web</th>
+          <th>Uloga</th>
+          <th>Pouzdanost</th>
+          <th>Bodovi</th>
+          <th>Pronađeno</th>
+          <th>Dokaz</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in find.results %}
+        <tr>
+          <td><a href="{{ r.website }}" target="_blank" rel="noopener"><strong>{{ r.website }}</strong></a></td>
+          <td class="muted">{{ r.role or '—' }}{% if loop.first and r.primary_rank %} · rang {{ r.primary_rank }}{% endif %}</td>
+          <td><span class="badge">{{ r.confidence }}</span></td>
+          <td>{{ r.score }}</td>
+          <td class="muted">{{ r.hits|join(", ") }}</td>
+          <td class="muted"><a href="{{ r.evidence_url }}" target="_blank" rel="noopener">stranica</a></td>
+          <td style="white-space:nowrap">
+            <form method="post" action="/web-finder/save" style="margin:0 0 .25rem 0;display:inline">
+              <input type="hidden" name="mbs" value="{{ company.mbs }}" />
+              <input type="hidden" name="website" value="{{ r.website }}" />
+              <input type="hidden" name="is_primary" value="1" />
+              <input type="hidden" name="role" value="{{ r.role or 'corporate' }}" />
+              <button type="submit" class="btn" style="padding:.35rem .55rem;font-size:.8rem">Glavna</button>
+            </form>
+            <form method="post" action="/web-finder/save" style="margin:0;display:inline">
+              <input type="hidden" name="mbs" value="{{ company.mbs }}" />
+              <input type="hidden" name="website" value="{{ r.website }}" />
+              <input type="hidden" name="is_primary" value="0" />
+              <input type="hidden" name="role" value="{{ r.role or 'other' }}" />
+              <button type="submit" class="btn ghost" style="padding:.35rem .55rem;font-size:.8rem">+ dodatna</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">Nema potvrđenih kandidata (OIB/MBS/naziv nisu nađeni na stranicama).</div>
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -7,25 +7,28 @@ Baza: Postgres `oriphiel` (container `oriphiel-postgres`)
 
 ---
 
-## Arhitektura (2 JSON-a)
+## Arhitektura (Live = stub + shared process)
 
 | Datoteka (lokalno / Downloads) | Uloga |
 |--------------------------------|--------|
-| **`oriphiel-live-account-stub.json`** → `Oriphiel-Live-Account-Stub.json` | **Live IMAP** — puni pipeline (Normalize → Contact → Message → Ollama AI → Attachments). **Jedna kopija po mailboxu.** |
-| **`oriphiel-mail-hub.json`** → `Oriphiel-Mail-Hub.json` | **Ops** — backfill / AI enrich / broj mailova. **Jedan workflow za sve accounte.** |
-| `oriphiel-error-notify.json` | Error Workflow (obavijest kad padne) |
-| `MULTI-ACCOUNT.md` | Kako dodati novi mailbox |
+| **`oriphiel-live-process.json`** → `Oriphiel-Live-Process.json` | **Zajednički** pipeline (Get Account → Message → AI → Attachments). **Jednom.** |
+| **`oriphiel-live-imap-stub.json`** → `Oriphiel-Live-Imap-Stub.json` | **Tanki IMAP** stub. **1× po mailboxu** → Execute Workflow → Process. |
+| **`oriphiel-mail-hub.json`** → `Oriphiel-Mail-Hub.json` | **Ops** — backfill / enrich / count. **Jedan** za sve accounte. |
+| `oriphiel-error-notify.json` | Error Workflow |
+| `MULTI-ACCOUNT.md` | Novi mailbox |
 
-**Deprecated:** `new-mails-mario-vitt.json` / `New mails - mario.vitt@oriphiel.hr.json` — **ne koristi**.
+**Deprecated:** stari monolit `oriphiel-live-account-stub.json`, `new-mails-mario-vitt.json`.
 
 ```
-  [Live Mail × N]          [Mail Hub × 1]
-   IMAP → AI → disk         Account Config
-                            ACTION=backfill|enrich|count
-         \                     /
-          \                   /
-           ▼                 ▼
-        Postgres oriphiel + /var/lib/oriphiel/attachments/
+  [IMAP Stub × N]              [Mail Hub × 1]
+   IMAP → Call Process          Account Config
+            \                   ACTION=…
+             \                     /
+              ▼                   ▼
+     [Live Process × 1]     SSH / Python
+     Message → AI → Attach
+              ▼
+     Postgres + attachments/
 ```
 
 ---
@@ -33,13 +36,15 @@ Baza: Postgres `oriphiel` (container `oriphiel-postgres`)
 ## Import u n8n (redoslijed)
 
 1. Import `oriphiel-error-notify.json` → Active  
-2. Import `Oriphiel-Live-Account-Stub.json`  
-   - **Account Email** = `mario.vitt@oriphiel.hr` (ili drugi)  
-   - IMAP credential za taj mailbox  
-   - Settings → **Error Workflow** → Oriphiel — Error notify  
+2. Import **`Oriphiel-Live-Process.json`** → Postgres + SSH → **Active**  
+3. Import **`Oriphiel-Live-Imap-Stub.json`**  
+   - IMAP credential za mailbox  
+   - **Account Email** = npr. `mario.vitt@oriphiel.hr`  
+   - Nod **Call Live Process** → workflow `Oriphiel — Live Process (shared)`  
+   - Settings → **Error Workflow** → Error notify  
    - **Active**  
-3. Import `Oriphiel-Mail-Hub.json` (ops; može Inactive dok ne treba)  
-4. Stari **New mails - mario.vitt…** → **Deactivate** / Delete  
+4. Import `Oriphiel-Mail-Hub.json` (ops)  
+5. Stari monolit / **New mails - mario…** → **Deactivate**  
 
 Credentials: Postgres, IMAP, SSH (isti kao prije).
 
@@ -47,37 +52,27 @@ Credentials: Postgres, IMAP, SSH (isti kao prije).
 
 ## Live (novi mail)
 
-Tok: IMAP → Account Email → Get Account → Normalize → Upsert Contact → Insert Message → **AI Enrich (Ollama)** → Update AI → attachmenti
+Tok: **Stub** IMAP → Account Email → Call Process → **Process** Get Account → Normalize → Contact → Insert Message → **AI** → Attachments
 
 - `thread_key` iz In-Reply-To / References / Message-ID  
 - Disk: `/var/lib/oriphiel/attachments/email/{account_id}/`  
-- **Ne** markiraj IMAP as read (Post-process prazno)  
+- **Ne** markiraj IMAP as read  
 
 ### Novi mailbox
 
 1. `cp accounts/*.env.example accounts/XYZ.env` na VPS-u + lozinka  
-2. n8n: **Duplicate** Live Mail workflow → rename → novi IMAP credential → promijeni **Account Email**  
-3. Hub: samo promijeni Account Config  
+2. n8n: **Duplicate samo IMAP Stub** (ne Process) → novi IMAP + Account Email  
+3. Hub: samo Account Config  
 
 ---
 
 ## Hub — ops (backfill / AI / broj)
 
-Otvori **Account Config**:
+1. Otvori **Account Config** (Code nod) — uredi `cfg` objekt na vrhu
+2. Primjer backfill: `ACTION: 'backfill'`, `RESET_BEFORE: '0'`, `RUN_AI: '0'`
+3. **Manual Trigger** → Execute workflow
 
-| Polje | Primjer | Značenje |
-|--------|---------|----------|
-| `ACTION` | `count` / `backfill` / `enrich` | što pokrenuti |
-| `ACCOUNT_EMAIL` | `mario.vitt@oriphiel.hr` | account |
-| `ENV_FILE` | `accounts/oriphiel.hr-mario.vitt.env` | IMAP env |
-| `STATUS_TAG` | `mario.vitt` | ime status JSON-a |
-| `RUN_AI` | `0` / `1` | AI tijekom backfilla (sporo) |
-| `RESET_BEFORE` | `0` / `1` | wipe prije uvoza |
-| `BATCH_SIZE` | `50` | batch |
-| `MARK_AS_SEEN` | `0` | IMAP Seen (preporuka OFF) |
-
-Zatim **Manual Trigger**.
-
+Komentari u kodu navode dopuštene vrijednosti. Set text polja uklonjena (n8n bug → `[object Object]`).
 | ACTION | Status na VPS-u |
 |--------|------------------|
 | `backfill` | `watch -n2 cat /tmp/oriphiel-imap-backfill-{STATUS_TAG}.json` |
@@ -155,9 +150,43 @@ Upload skripti s Windowsa: `Deploy-ImapBackfill.ps1`
 
 ---
 
+## Folderi / labele / delete sync
+
+Migracija (jednom):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\GIT_PROJEKTI\oriphiel-platform\scripts\oriphiel_messaging\Apply-MigrateFolderLabels.ps1
+```
+
+Zatim upload novog `sync-imap-backfill.py` + `.sh` (`Deploy-ImapBackfill.ps1`).
+
+| Env | Značenje |
+|-----|----------|
+| `MAILBOXES=INBOX,Sent,Archive` | Više foldera (aliasi: Sent/Archive/…) |
+| `SYNC_DELETE=1` | Soft-delete kad UID nestane (`deleted_at`, `status=deleted`) |
+| `ONLY_RECONCILE=1` | Samo delete + refresh FLAGS/labela (bez RFC822) |
+
+Reconcile (brzo, cron-friendly):
+
+```bash
+ENV_FILE=accounts/oriphiel.hr-mario.vitt.env bash sync-imap-reconcile.sh
+```
+
+Full multi-folder backfill (novi `external_id` = `imap:FOLDER:uid-N`):
+
+```bash
+MAILBOXES=INBOX,Sent,Archive SYNC_DELETE=1 ENV_FILE=accounts/oriphiel.hr-mario.vitt.env \
+  bash sync-imap-backfill.sh
+```
+
+**Napomena:** stari redovi (`mid-…` / `uid-…`) nemaju `folder`/`imap_uid` — delete sync vrijedi nakon novog backfilla. Live IMAP i dalje samo INBOX; labele se pune pri backfill/reconcile.
+
+Aktivni mailovi: `WHERE deleted_at IS NULL`.
+
+---
+
 ## Prijedlozi
 
-- Admin UI (threadovi + AI draft)  
+- Admin UI (threadovi + AI draft + filter po folder/label)  
 - Slack/Telegram za `urgent`  
-- Sent folder sync  
-- Zajednički Process Mail sub-workflow (live još uvijek 1 IMAP credential = 1 Live kopija)
+- Periodični cron za `sync-imap-reconcile.sh`

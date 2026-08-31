@@ -25,6 +25,9 @@ Opcionalno:
   MARK_AS_SEEN=0                # IMAP \\Seen — default OFF (vidi UPUTE)
   STATUS_FILE=/tmp/oriphiel-imap-backfill-status.json
   PROGRESS_EVERY=10
+  MAILBOXES=INBOX,Sent,Archive  # zarezom; prazno = samo MAILBOX
+  SYNC_DELETE=1                 # soft-delete kad UID nestane u folderu
+  ONLY_RECONCILE=0              # 1 = samo delete+label refresh (bez RFC822)
 """
 
 from __future__ import annotations
@@ -47,6 +50,27 @@ from email.message import Message
 from pathlib import Path
 from typing import Any, Optional
 
+
+# Canonical folder aliases (server name → short key)
+FOLDER_ALIASES = {
+    "inbox": "INBOX",
+    "sent": "Sent",
+    "sent items": "Sent",
+    "sent messages": "Sent",
+    "odlazna posta": "Sent",
+    "odlazna pošta": "Sent",
+    "poslano": "Sent",
+    "poslane poruke": "Sent",
+    "arhiva": "Archive",
+    "archive": "Archive",
+    "archived": "Archive",
+    "all mail": "AllMail",
+    "trash": "Trash",
+    "deleted items": "Trash",
+    "junk": "Junk",
+    "spam": "Junk",
+    "drafts": "Drafts",
+}
 
 def env(name: str, default: str = "") -> str:
     return os.environ.get(name, default).strip()
@@ -367,19 +391,29 @@ def insert_message(
     external_id: str,
     thread_key: str,
     received_at: Optional[str],
+    *,
+    folder: str = "INBOX",
+    imap_uid: Optional[int] = None,
+    labels: Optional[list[str]] = None,
+    direction: str = "in",
 ) -> Optional[int]:
     contact_sql = "NULL" if contact_id is None else str(contact_id)
     received_sql = "NULL" if not received_at else f"{sql_quote(received_at)}::timestamptz"
+    uid_sql = "NULL" if imap_uid is None else str(int(imap_uid))
+    labels_sql = labels_to_sql(labels or [])
+    direction = "out" if direction == "out" else "in"
     ret = psql(
         f"""
 INSERT INTO messages (
   account_id, contact_id, channel, direction,
   from_address, subject, body_text, body_html,
-  external_id, thread_key, status, received_at
+  external_id, thread_key, status, received_at,
+  folder, imap_uid, labels, deleted_at
 ) VALUES (
-  {account_id}, {contact_sql}, 'email', 'in',
+  {account_id}, {contact_sql}, 'email', {sql_quote(direction)},
   {sql_quote(from_addr)}, {sql_quote(subject)}, {sql_quote(body_text)}, {sql_quote(body_html)},
-  {sql_quote(external_id)}, {sql_quote(thread_key)}, 'new', {received_sql}
+  {sql_quote(external_id)}, {sql_quote(thread_key)}, 'new', {received_sql},
+  {sql_quote(folder)}, {uid_sql}, {labels_sql}, NULL
 )
 ON CONFLICT (channel, external_id) DO UPDATE SET
   subject = EXCLUDED.subject,
@@ -387,7 +421,16 @@ ON CONFLICT (channel, external_id) DO UPDATE SET
   body_html = EXCLUDED.body_html,
   from_address = EXCLUDED.from_address,
   thread_key = EXCLUDED.thread_key,
-  received_at = EXCLUDED.received_at
+  received_at = EXCLUDED.received_at,
+  folder = EXCLUDED.folder,
+  imap_uid = EXCLUDED.imap_uid,
+  labels = EXCLUDED.labels,
+  direction = EXCLUDED.direction,
+  deleted_at = NULL,
+  status = CASE
+    WHEN messages.status = 'deleted' THEN 'new'
+    ELSE messages.status
+  END
 RETURNING id;
 """
     )
@@ -399,6 +442,188 @@ RETURNING id;
     if row:
         return int(row.splitlines()[0])
     return None
+
+
+def labels_to_sql(labels: list[str]) -> str:
+    if not labels:
+        return "'{}'::text[]"
+    parts = ", ".join(sql_quote(x) for x in labels)
+    return f"ARRAY[{parts}]::text[]"
+
+
+def normalize_folder_key(name: str) -> str:
+    raw = (name or "").strip().strip('"')
+    if not raw:
+        return "INBOX"
+    key = FOLDER_ALIASES.get(raw.lower())
+    if key:
+        return key
+    # INBOX.Sent / [Gmail]/Sent Mail
+    low = raw.lower().replace("[gmail]/", "").replace("inbox.", "")
+    for alias, canon in FOLDER_ALIASES.items():
+        if alias in low or low.endswith(alias):
+            return canon
+    return raw.split("/")[-1].split(".")[-1] or raw
+
+
+def parse_mailboxes_env() -> list[str]:
+    multi = env("MAILBOXES", "")
+    if multi:
+        return [m.strip() for m in multi.split(",") if m.strip()]
+    return [env("MAILBOX", "INBOX") or "INBOX"]
+
+
+def list_server_folders(imap: imaplib.IMAP4_SSL) -> list[str]:
+    typ, data = imap.list()
+    if typ != "OK" or not data:
+        return ["INBOX"]
+    out: list[str] = []
+    for raw in data:
+        if not raw:
+            continue
+        line = raw.decode("utf-8", errors="replace") if isinstance(raw, bytes) else str(raw)
+        # * LIST (\HasNoChildren) "/" "INBOX"
+        m = re.search(r' "([^"]+)"\s*$', line) or re.search(r' ([^\s]+)\s*$', line)
+        if m:
+            out.append(m.group(1))
+    return out or ["INBOX"]
+
+
+def resolve_mailbox_path(wanted: str, server_folders: list[str]) -> Optional[str]:
+    """Map wanted key (INBOX/Sent/…) to actual IMAP mailbox name."""
+    wanted_key = normalize_folder_key(wanted)
+    if wanted in server_folders:
+        return wanted
+    for sf in server_folders:
+        if normalize_folder_key(sf) == wanted_key:
+            return sf
+        if sf.lower() == wanted.lower():
+            return sf
+    if wanted_key == "INBOX":
+        return "INBOX"
+    return None
+
+
+def parse_imap_flags_blob(blob: bytes | str) -> list[str]:
+    text = blob.decode("utf-8", errors="replace") if isinstance(blob, bytes) else str(blob)
+    labels: list[str] = []
+    fm = re.search(r"FLAGS\s*\(([^)]*)\)", text, re.I)
+    if fm:
+        for tok in re.findall(r'\\?[^\s]+', fm.group(1)):
+            t = tok.strip().strip('"')
+            if t:
+                labels.append(t)
+    gm = re.search(r'X-GM-LABELS\s*\(([^)]*)\)', text, re.I)
+    if gm:
+        for tok in re.findall(r'"([^"]+)"|(\S+)', gm.group(1)):
+            t = (tok[0] or tok[1] or "").strip()
+            if t and t not in labels:
+                labels.append(t)
+    # dedupe keep order
+    seen: set[str] = set()
+    out: list[str] = []
+    for x in labels:
+        if x not in seen:
+            seen.add(x)
+            out.append(x)
+    return out
+
+
+def fetch_uid_labels(imap: imaplib.IMAP4_SSL, seq_or_uid: bytes) -> list[str]:
+    labels: list[str] = []
+    try:
+        typ, data = imap.fetch(seq_or_uid, "(FLAGS)")
+        if typ == "OK" and data:
+            for part in data:
+                if isinstance(part, tuple) and part[0]:
+                    labels = parse_imap_flags_blob(part[0])
+                    break
+                if isinstance(part, bytes):
+                    labels = parse_imap_flags_blob(part)
+                    break
+    except Exception:
+        pass
+    # Gmail extension (ignore errors on Hostinger etc.)
+    try:
+        typ, data = imap.fetch(seq_or_uid, "(X-GM-LABELS)")
+        if typ == "OK" and data:
+            for part in data:
+                raw = part[0] if isinstance(part, tuple) else part
+                if not raw:
+                    continue
+                for lab in parse_imap_flags_blob(raw):
+                    if lab not in labels:
+                        labels.append(lab)
+    except Exception:
+        pass
+    return labels
+
+
+def soft_delete_missing_uids(
+    account_id: int,
+    folder: str,
+    live_uids: set[int],
+    dry_run: bool,
+) -> int:
+    """Mark DB rows deleted when IMAP UID no longer exists in folder."""
+    rows = psql(
+        f"""
+SELECT imap_uid FROM messages
+WHERE account_id = {account_id}
+  AND channel = 'email'
+  AND folder = {sql_quote(folder)}
+  AND imap_uid IS NOT NULL
+  AND deleted_at IS NULL;
+"""
+    )
+    if not rows.strip():
+        return 0
+    db_uids = {int(x) for x in rows.splitlines() if x.strip().isdigit()}
+    gone = sorted(db_uids - live_uids)
+    if not gone:
+        return 0
+    if dry_run:
+        print(f"  DRY soft-delete folder={folder} uids={gone[:20]}{'…' if len(gone)>20 else ''}", flush=True)
+        return len(gone)
+    # chunk updates
+    n = 0
+    chunk = 200
+    for i in range(0, len(gone), chunk):
+        part = gone[i : i + chunk]
+        uid_list = ", ".join(str(u) for u in part)
+        psql(
+            f"""
+UPDATE messages
+SET deleted_at = NOW(),
+    status = 'deleted'
+WHERE account_id = {account_id}
+  AND folder = {sql_quote(folder)}
+  AND imap_uid IN ({uid_list})
+  AND deleted_at IS NULL;
+"""
+        )
+        n += len(part)
+    print(f"  soft-deleted {n} msgs folder={folder}", flush=True)
+    return n
+
+
+def update_labels_only(
+    account_id: int,
+    folder: str,
+    imap_uid: int,
+    labels: list[str],
+) -> None:
+    psql(
+        f"""
+UPDATE messages
+SET labels = {labels_to_sql(labels)},
+    deleted_at = NULL,
+    status = CASE WHEN status = 'deleted' THEN 'new' ELSE status END
+WHERE account_id = {account_id}
+  AND folder = {sql_quote(folder)}
+  AND imap_uid = {int(imap_uid)};
+"""
+    )
 
 
 def insert_attachment_row(
@@ -501,7 +726,7 @@ def main() -> int:
     imap_port = env_int("IMAP_PORT", 993)
     imap_user = env("IMAP_USER")
     imap_pass = strip_wrapping_quotes(env("IMAP_PASSWORD"))
-    mailbox = env("MAILBOX", "INBOX")
+    mailbox_wanted = parse_mailboxes_env()
     account_email = env("ACCOUNT_EMAIL", imap_user)
     limit = env_int("LIMIT", 0)
     only_unseen = truthy("ONLY_UNSEEN")
@@ -519,7 +744,9 @@ def main() -> int:
     batch_sleep = env_int("BATCH_SLEEP_SEC", 1)
     run_ai = truthy("RUN_AI", "0")
     mark_as_seen = truthy("MARK_AS_SEEN", "0")
-    ollama = load_ollama_enricher() if run_ai else None
+    sync_delete = truthy("SYNC_DELETE", "1")
+    only_reconcile = truthy("ONLY_RECONCILE", "0")
+    ollama = load_ollama_enricher() if run_ai and not only_reconcile else None
     started_at = time.time()
 
     if not imap_user or not imap_pass:
@@ -527,18 +754,19 @@ def main() -> int:
         return 2
 
     print(f"=== STARTED backfill account={account_email} ===", flush=True)
-    print(f"IMAP {imap_host}:{imap_port} user={imap_user} mailbox={mailbox}", flush=True)
-    print(f"SAVE_ATTACHMENTS={int(save_attachments)} ATTACH_DIR={attach_dir}/{{channel}}/{{account_id}}", flush=True)
+    print(f"IMAP {imap_host}:{imap_port} user={imap_user} mailboxes={mailbox_wanted}", flush=True)
     print(
-        f"BATCH_SIZE={batch_size} RUN_AI={int(run_ai)} MARK_AS_SEEN={int(mark_as_seen)} "
-        f"(Seen=IMAP flag, ne znaci da si osobno procitao)",
+        f"SYNC_DELETE={int(sync_delete)} ONLY_RECONCILE={int(only_reconcile)} "
+        f"SAVE_ATTACHMENTS={int(save_attachments)}",
         flush=True,
     )
-    print(f"STATUS_FILE={status_file} PROGRESS_EVERY={progress_every}", flush=True)
+    print(
+        f"BATCH_SIZE={batch_size} RUN_AI={int(run_ai)} MARK_AS_SEEN={int(mark_as_seen)}",
+        flush=True,
+    )
     account_id = ensure_account(account_email)
     channel = "email"
     print(f"account_id={account_id} channel={channel}", flush=True)
-    print(f"attach_path_example={attach_dir / channel / str(account_id)}", flush=True)
 
     write_status(
         status_file,
@@ -546,11 +774,13 @@ def main() -> int:
             "state": "starting",
             "account_email": account_email,
             "account_id": account_id,
+            "mailboxes": mailbox_wanted,
             "current": 0,
             "total": 0,
             "progress": "0/0",
             "messages_processed": 0,
             "attachments_saved": 0,
+            "soft_deleted": 0,
             "errors": 0,
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
         },
@@ -558,7 +788,6 @@ def main() -> int:
 
     if reset_all and not dry_run:
         reset_messaging_tables(include_accounts=reset_accounts)
-        # wipe all attachment files
         if attach_dir.exists():
             for child in attach_dir.iterdir():
                 if child.is_dir():
@@ -573,172 +802,223 @@ def main() -> int:
 
     M = imaplib.IMAP4_SSL(imap_host, imap_port)
     M.login(imap_user, imap_pass)
-    typ, _ = M.select(mailbox, readonly=not mark_as_seen)
-    if typ != "OK":
-        print(f"Cannot select mailbox {mailbox}", file=sys.stderr)
+    server_folders = list_server_folders(M)
+    print(f"Server folders ({len(server_folders)}): {server_folders[:30]}", flush=True)
+
+    resolved: list[tuple[str, str]] = []  # (canon_key, imap_path)
+    for wanted in mailbox_wanted:
+        path = resolve_mailbox_path(wanted, server_folders)
+        if not path:
+            print(f"WARN: mailbox not found on server: {wanted}", file=sys.stderr, flush=True)
+            continue
+        resolved.append((normalize_folder_key(wanted), path))
+    if not resolved:
+        print("No mailboxes resolved", file=sys.stderr)
         return 1
 
-    criteria = "UNSEEN" if only_unseen else "ALL"
-    typ, data = M.search(None, criteria)
-    if typ != "OK":
-        print("IMAP search failed", file=sys.stderr)
-        return 1
-
-    ids = (data[0] or b"").split()
-    if limit > 0:
-        ids = ids[-limit:]
-
-    total = len(ids)
-    print(f"Found {total} messages (criteria={criteria}, limit={limit or 'all'})", flush=True)
-    print(f"PROGRESS 0/{total}", flush=True)
-    if total == 0:
-        print("Nothing to do (0 messages).", flush=True)
     inserted = 0
     skipped = 0
     errors = 0
     attach_count = 0
+    soft_deleted = 0
+    grand_total = 0
 
+    # Pre-count for progress
+    folder_ids: dict[str, list[bytes]] = {}
+    for folder_key, imap_path in resolved:
+        typ, _ = M.select(imap_path, readonly=not mark_as_seen or only_reconcile)
+        if typ != "OK":
+            print(f"Cannot select mailbox {imap_path}", file=sys.stderr, flush=True)
+            errors += 1
+            continue
+        criteria = "UNSEEN" if only_unseen and not only_reconcile else "ALL"
+        typ, data = M.search(None, criteria)
+        if typ != "OK":
+            errors += 1
+            continue
+        ids = (data[0] or b"").split()
+        if limit > 0:
+            ids = ids[-limit:]
+        folder_ids[folder_key] = ids
+        grand_total += len(ids)
+        print(f"Folder {folder_key} ({imap_path}): {len(ids)} msgs", flush=True)
+
+    print(f"PROGRESS 0/{grand_total}", flush=True)
     write_status(
         status_file,
         {
             "state": "running",
             "account_email": account_email,
             "account_id": account_id,
+            "mailboxes": [k for k, _ in resolved],
             "current": 0,
-            "total": total,
-            "progress": f"0/{total}",
+            "total": grand_total,
+            "progress": f"0/{grand_total}",
             "messages_processed": 0,
             "attachments_saved": 0,
-            "errors": 0,
+            "soft_deleted": 0,
+            "errors": errors,
             "started_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(started_at)),
         },
     )
 
-    for idx, raw_id in enumerate(ids, start=1):
-        uid = raw_id.decode("ascii", errors="ignore")
-        subject_short = ""
-        try:
-            typ, msg_data = M.fetch(raw_id, "(RFC822)")
-            if typ != "OK" or not msg_data or not msg_data[0]:
-                errors += 1
-                continue
-            raw_email = msg_data[0][1]
-            msg = email.message_from_bytes(raw_email)
+    global_idx = 0
+    for folder_key, imap_path in resolved:
+        typ, _ = M.select(imap_path, readonly=not mark_as_seen or only_reconcile)
+        if typ != "OK":
+            continue
+        ids = folder_ids.get(folder_key, [])
+        live_uids: set[int] = set()
+        direction = "out" if folder_key in ("Sent", "Drafts") else "in"
 
-            from_addr = extract_addr(msg.get("From"))
-            subject = decode_hdr(msg.get("Subject"))
-            subject_short = subject[:50]
-            message_id = (msg.get("Message-ID") or "").strip()
-            date_hdr = msg.get("Date")
-            received_at = None
-            if date_hdr:
-                try:
-                    received_at = email.utils.parsedate_to_datetime(date_hdr).isoformat()
-                except Exception:
-                    received_at = None
+        for raw_id in ids:
+            global_idx += 1
+            uid = raw_id.decode("ascii", errors="ignore")
+            subject_short = ""
+            try:
+                uid_int = int(uid)
+                live_uids.add(uid_int)
+            except ValueError:
+                uid_int = None
 
-            body_text, body_html = get_body(msg)
-            attachments = iter_attachments(msg) if save_attachments else []
-            thread_key = compute_thread_key(msg, uid, message_id)
-            external_id = f"uid-{uid}"
-            if message_id:
-                external_id = f"mid-{message_id}"
+            try:
+                labels = fetch_uid_labels(M, raw_id)
 
-            if dry_run:
-                print(
-                    f"DRY uid={uid} thread={thread_key[:40]!r} from={from_addr} "
-                    f"subject={subject[:60]!r} attaches={len(attachments)}",
-                    flush=True,
-                )
-                if save_attachments and attachments:
-                    save_attachments_fixed(
-                        message_db_id=0,
-                        account_id=account_id,
-                        channel=channel,
-                        attachments=attachments,
-                        attach_dir=attach_dir,
-                        url_prefix=url_prefix,
-                        max_bytes=max_attach,
-                        dry_run=True,
-                    )
-                inserted += 1
-            else:
-                contact_id = upsert_contact(from_addr) if from_addr else None
-                msg_db_id = insert_message(
-                    account_id=account_id,
-                    contact_id=contact_id,
-                    from_addr=from_addr,
-                    subject=subject,
-                    body_text=body_text,
-                    body_html=body_html,
-                    external_id=external_id,
-                    thread_key=thread_key,
-                    received_at=received_at,
-                )
-                if msg_db_id is None:
-                    errors += 1
-                else:
-                    ai_summary = ai_priority = ai_draft = None
-                    if ollama and (body_text or subject):
-                        ai = ollama.enrich_if_enabled(from_addr, subject, body_text)
-                        if ai:
-                            ai_summary = ai.get("ai_summary")
-                            ai_priority = ai.get("ai_priority")
-                            ai_draft = ai.get("ai_draft")
-                    if ai_summary or ai_priority or ai_draft:
-                        update_message_fields(
-                            msg_db_id,
-                            thread_key=thread_key,
-                            ai_summary=ai_summary,
-                            ai_priority=ai_priority,
-                            ai_draft=ai_draft,
-                        )
-                    if save_attachments and attachments:
-                        n = save_attachments_fixed(
-                            message_db_id=msg_db_id,
-                            account_id=account_id,
-                            channel=channel,
-                            attachments=attachments,
-                            attach_dir=attach_dir,
-                            url_prefix=url_prefix,
-                            max_bytes=max_attach,
-                            dry_run=False,
-                        )
-                        attach_count += n
-                    mark_imap_seen(M, uid, mark_as_seen)
+                if only_reconcile:
+                    if uid_int is not None and not dry_run:
+                        update_labels_only(account_id, folder_key, uid_int, labels)
                     inserted += 1
-        except Exception as exc:
-            errors += 1
-            print(f"ERR uid={uid}: {exc}", file=sys.stderr, flush=True)
-        finally:
-            if batch_size > 0 and idx % batch_size == 0:
-                print(f"BATCH {idx}/{total} — pauza {batch_sleep}s", flush=True)
-                gc.collect()
-                if batch_sleep > 0:
-                    time.sleep(batch_sleep)
-            show = idx == 1 or idx == total or idx % progress_every == 0
-            if show:
-                print(
-                    f"PROGRESS {idx}/{total} processed={inserted} attachments={attach_count} "
-                    f"errors={errors} subject={subject_short!r}",
-                    flush=True,
+                else:
+                    typ, msg_data = M.fetch(raw_id, "(RFC822)")
+                    if typ != "OK" or not msg_data or not msg_data[0]:
+                        errors += 1
+                        continue
+                    raw_email = msg_data[0][1]
+                    msg = email.message_from_bytes(raw_email)
+
+                    from_addr = extract_addr(msg.get("From"))
+                    subject = decode_hdr(msg.get("Subject"))
+                    subject_short = subject[:50]
+                    message_id = (msg.get("Message-ID") or "").strip()
+                    date_hdr = msg.get("Date")
+                    received_at = None
+                    if date_hdr:
+                        try:
+                            received_at = email.utils.parsedate_to_datetime(date_hdr).isoformat()
+                        except Exception:
+                            received_at = None
+
+                    body_text, body_html = get_body(msg)
+                    attachments = iter_attachments(msg) if save_attachments else []
+                    thread_key = compute_thread_key(msg, uid, message_id)
+                    # Per-folder UID — delete sync + multi-folder safe
+                    external_id = f"imap:{folder_key}:uid-{uid}"
+
+                    if dry_run:
+                        print(
+                            f"DRY folder={folder_key} uid={uid} labels={labels[:5]} "
+                            f"from={from_addr} subject={subject[:50]!r}",
+                            flush=True,
+                        )
+                        inserted += 1
+                    else:
+                        contact_id = upsert_contact(from_addr) if from_addr else None
+                        msg_db_id = insert_message(
+                            account_id=account_id,
+                            contact_id=contact_id,
+                            from_addr=from_addr,
+                            subject=subject,
+                            body_text=body_text,
+                            body_html=body_html,
+                            external_id=external_id,
+                            thread_key=thread_key,
+                            received_at=received_at,
+                            folder=folder_key,
+                            imap_uid=uid_int,
+                            labels=labels,
+                            direction=direction,
+                        )
+                        if msg_db_id is None:
+                            errors += 1
+                        else:
+                            ai_summary = ai_priority = ai_draft = None
+                            if ollama and (body_text or subject):
+                                ai = ollama.enrich_if_enabled(from_addr, subject, body_text)
+                                if ai:
+                                    ai_summary = ai.get("ai_summary")
+                                    ai_priority = ai.get("ai_priority")
+                                    ai_draft = ai.get("ai_draft")
+                            if ai_summary or ai_priority or ai_draft:
+                                update_message_fields(
+                                    msg_db_id,
+                                    thread_key=thread_key,
+                                    ai_summary=ai_summary,
+                                    ai_priority=ai_priority,
+                                    ai_draft=ai_draft,
+                                )
+                            if save_attachments and attachments:
+                                n = save_attachments_fixed(
+                                    message_db_id=msg_db_id,
+                                    account_id=account_id,
+                                    channel=channel,
+                                    attachments=attachments,
+                                    attach_dir=attach_dir,
+                                    url_prefix=url_prefix,
+                                    max_bytes=max_attach,
+                                    dry_run=False,
+                                )
+                                attach_count += n
+                            mark_imap_seen(M, uid, mark_as_seen)
+                            inserted += 1
+            except Exception as exc:
+                errors += 1
+                print(f"ERR folder={folder_key} uid={uid}: {exc}", file=sys.stderr, flush=True)
+            finally:
+                if batch_size > 0 and global_idx % batch_size == 0:
+                    print(f"BATCH {global_idx}/{grand_total} — pauza {batch_sleep}s", flush=True)
+                    gc.collect()
+                    if batch_sleep > 0:
+                        time.sleep(batch_sleep)
+                show = global_idx == 1 or global_idx == grand_total or global_idx % progress_every == 0
+                if show:
+                    print(
+                        f"PROGRESS {global_idx}/{grand_total} folder={folder_key} "
+                        f"processed={inserted} attachments={attach_count} errors={errors} "
+                        f"subject={subject_short!r}",
+                        flush=True,
+                    )
+                write_status(
+                    status_file,
+                    {
+                        "state": "running",
+                        "account_email": account_email,
+                        "account_id": account_id,
+                        "folder": folder_key,
+                        "current": global_idx,
+                        "total": grand_total,
+                        "progress": f"{global_idx}/{grand_total}",
+                        "messages_processed": inserted,
+                        "attachments_saved": attach_count,
+                        "soft_deleted": soft_deleted,
+                        "errors": errors,
+                        "last_subject": subject_short,
+                        "elapsed_sec": round(time.time() - started_at, 1),
+                        "started_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(started_at)),
+                    },
                 )
-            write_status(
-                status_file,
-                {
-                    "state": "running",
-                    "account_email": account_email,
-                    "account_id": account_id,
-                    "current": idx,
-                    "total": total,
-                    "progress": f"{idx}/{total}",
-                    "messages_processed": inserted,
-                    "attachments_saved": attach_count,
-                    "errors": errors,
-                    "last_subject": subject_short,
-                    "elapsed_sec": round(time.time() - started_at, 1),
-                    "started_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(started_at)),
-                },
+
+        if sync_delete:
+            # Full ALL uids for delete (ignore LIMIT / UNSEEN)
+            typ, data = M.search(None, "ALL")
+            all_uids: set[int] = set()
+            if typ == "OK":
+                for b in (data[0] or b"").split():
+                    try:
+                        all_uids.add(int(b.decode("ascii")))
+                    except ValueError:
+                        pass
+            soft_deleted += soft_delete_missing_uids(
+                account_id, folder_key, all_uids, dry_run=dry_run
             )
 
     try:
@@ -750,27 +1030,31 @@ def main() -> int:
     elapsed = round(time.time() - started_at, 1)
     print(
         f"DONE messages_processed={inserted} skipped_marker={skipped} "
-        f"attachments_saved={attach_count} errors={errors} elapsed_sec={elapsed}",
+        f"attachments_saved={attach_count} soft_deleted={soft_deleted} "
+        f"errors={errors} elapsed_sec={elapsed}",
         flush=True,
     )
-    print(f"PROGRESS {total}/{total} DONE", flush=True)
-    # Jedan red za n8n Output (lako citanje)
+    print(f"PROGRESS {grand_total}/{grand_total} DONE", flush=True)
     result = {
         "account_email": account_email,
         "account_id": account_id,
-        "total": total,
-        "progress": f"{total}/{total}",
+        "mailboxes": [k for k, _ in resolved],
+        "total": grand_total,
+        "progress": f"{grand_total}/{grand_total}",
         "messages_processed": inserted,
         "attachments_saved": attach_count,
+        "soft_deleted": soft_deleted,
         "errors": errors,
         "elapsed_sec": elapsed,
         "dry_run": dry_run,
         "reset_before": reset_before,
+        "sync_delete": sync_delete,
+        "only_reconcile": only_reconcile,
         "state": "finished",
     }
     print("RESULT " + json.dumps(result, ensure_ascii=False), flush=True)
     write_status(status_file, result)
-    print(f"=== FINISHED {inserted}/{total} (errors={errors}) ===", flush=True)
+    print(f"=== FINISHED {inserted}/{grand_total} (errors={errors}) ===", flush=True)
     return 0 if errors == 0 else 1
 
 

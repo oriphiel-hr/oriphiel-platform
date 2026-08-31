@@ -159,6 +159,33 @@ function Get-FirstText([string]$sectionHtml) {
   return $null
 }
 
+function Get-SudregWebsite([string]$html, [string]$sectionHtml) {
+  $candidates = New-Object System.Collections.Generic.List[string]
+  if ($sectionHtml) {
+    $t = Get-FirstText $sectionHtml
+    if ($t) { [void]$candidates.Add($t) }
+    foreach ($m in [regex]::Matches($sectionHtml, '(?is)href\s*=\s*"(?<u>https?://[^"]+)"')) {
+      [void]$candidates.Add($m.Groups['u'].Value)
+    }
+  }
+  # fallback: vanjski linkovi u stranici (ne sudreg.pravosudje.hr)
+  foreach ($m in [regex]::Matches($html, '(?is)href\s*=\s*"(?<u>https?://(?!sudreg\.pravosudje\.hr)[^"]+)"')) {
+    [void]$candidates.Add($m.Groups['u'].Value)
+  }
+  foreach ($raw in $candidates) {
+    $u = ("$raw").Trim()
+    if (-not $u) { continue }
+    if ($u -notmatch '(?i)^https?://') {
+      if ($u -match '(?i)^(www\.|[a-z0-9\-]+\.[a-z]{2,})') { $u = "https://$u" } else { continue }
+    }
+    if ($u -match '(?i)sudreg\.pravosudje\.hr|pravosudje\.hr|facebook\.com|linkedin\.com|twitter\.com|instagram\.com') {
+      continue
+    }
+    return $u
+  }
+  return $null
+}
+
 function Parse-People([string]$sectionHtml) {
   $people = New-Object System.Collections.Generic.List[object]
   if ([string]::IsNullOrWhiteSpace($sectionHtml)) { return @() }
@@ -237,6 +264,7 @@ function Get-SudregSubjectObject {
   $secTvrtka = Find-Section $sections @('Tvrtka')
   $secAdresa = Find-Section $sections @('Sjedi')
   $secEmail = Find-Section $sections @('elektroni')
+  $secWeb = Find-Section $sections @('Internet', 'web stran', 'WWW', 'mrežn', 'mrezn')
   $secKapital = Find-Section $sections @('kapital')
   $secOblik = Find-Section $sections @('Pravni oblik')
   $secPretezita = Find-Section $sections @('Prete')
@@ -282,6 +310,10 @@ function Get-SudregSubjectObject {
 
   $oibVal = Get-FirstText $secOib
 
+  $pretParts = [string[]](As-StringArray (Get-TableTexts $secPretezita))
+  $pretezitaDjelatnost = (($pretParts | Where-Object { $_ }) -join ' ').Trim()
+  if (-not $pretezitaDjelatnost) { $pretezitaDjelatnost = Get-FirstText $secPretezita }
+
   return [pscustomobject]@{
     sourceUrl           = $url
     fetchedAt           = (Get-Date).ToString('o')
@@ -296,9 +328,10 @@ function Get-SudregSubjectObject {
     nazivKraci          = $nazivKraci
     adresa              = (([string[]](As-StringArray (Get-TableTexts $secAdresa))) -join ', ')
     email               = Get-FirstText $secEmail
+    website             = Get-SudregWebsite $html $secWeb
     temeljniKapital     = Get-FirstText $secKapital
     pravniOblik         = Get-FirstText $secOblik
-    pretezitaDjelatnost = Get-FirstText $secPretezita
+    pretezitaDjelatnost = $pretezitaDjelatnost
     djelatnosti         = $djelatnosti
     clanovi             = @(Parse-People $secClanovi)
     zastupnici          = @(Parse-People $secZastupnici)
@@ -343,6 +376,7 @@ function Wait-SudregDelay {
         nazivKraci          = $null
         adresa              = $null
         email               = $null
+        website             = $null
         temeljniKapital     = $null
         pravniOblik         = $null
         pretezitaDjelatnost = $null

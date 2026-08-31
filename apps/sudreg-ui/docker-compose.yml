@@ -1,0 +1,29 @@
+# Interni Sudreg UI + pozadinski web-finder worker
+# 1) Network postgresa: docker inspect oriphiel-postgres --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+# 2) .env: DATABASE_URL + CRM_DATABASE_URL (host=oriphiel-postgres)
+# 3) Zamijeni external network name ispod ako treba
+
+services:
+  sudreg-ui:
+    build: .
+    container_name: sudreg-ui
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "127.0.0.1:8091:8091"
+    networks:
+      - oriphiel_net
+
+  web-finder-worker:
+    build: .
+    container_name: web-finder-worker
+    restart: unless-stopped
+    env_file: .env
+    command: ["python", "-m", "app.web_finder_worker"]
+    networks:
+      - oriphiel_net
+
+networks:
+  oriphiel_net:
+    external: true
+    name: bridge   # <-- zamijeni stvarnim imenom mreze postgres containera

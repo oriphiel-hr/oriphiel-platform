@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}{{ company.naziv or company.mbs }} — Sudreg{% endblock %}
+{% block content %}
+<p><a href="/">← Natrag na pretragu</a></p>
+<h1>{{ company.naziv or "(bez naziva)" }}</h1>
+<p class="sub">
+  MBS <span class="mono">{{ company.mbs }}</span>
+  {% if company.oib %} · OIB <span class="mono">{{ company.oib }}</span>{% endif %}
+  {% if company.status %} · <span class="badge">{{ company.status }}</span>{% endif %}
+  {% if company.deleted %} · <span class="badge del">brisano</span>{% endif %}
+</p>
+
+<div class="detail-grid">
+  <div class="card">
+    <h2>Osnovno</h2>
+    <dl class="kv">
+      <dt>Kraći naziv</dt><dd>{{ company.naziv_kraci or "—" }}</dd>
+      <dt>Adresa</dt><dd>{{ company.adresa or "—" }}</dd>
+      <dt>Email</dt><dd>{% if company.email %}<a href="mailto:{{ company.email }}">{{ company.email }}</a>{% else %}—{% endif %}</dd>
+      <dt id="web">Web (CRM)</dt><dd>
+        {% if company.crm_websites %}
+          {% for w in company.crm_websites %}
+            {% set web = w.website if w.website.startswith('http') else 'https://' + w.website %}
+            <div class="web-box has" style="margin-bottom:.45rem">
+              <span class="web-pill">{% if w.is_primary %}glavna{% else %}{{ w.role or 'dodatna' }}{% endif %}</span>
+              <a class="web-url" href="{{ web }}" target="_blank" rel="noopener">{{ w.website }}</a>
+              <div class="web-actions">
+                {% if w.score %}<span>{{ w.score }} bod</span>{% endif %}
+                <span>{{ w.source or "web_finder" }}</span>
+              </div>
+            </div>
+          {% endfor %}
+          <a href="/web-finder?mbs={{ company.mbs }}">+ dodaj / provjeri domenu</a>
+        {% else %}
+          <a class="web-find" href="/web-finder?mbs={{ company.mbs }}">Pronađi web → CRM</a>
+        {% endif %}
+      </dd>
+      <dt>Web (Sudreg)</dt><dd>
+        {% if company.sudreg_website %}
+          {% set sweb = company.sudreg_website if company.sudreg_website.startswith('http') else 'https://' + company.sudreg_website %}
+          <a href="{{ sweb }}" target="_blank" rel="noopener">{{ company.sudreg_website }}</a>
+          <span class="muted" style="font-size:.8rem"> · iz registra</span>
+        {% else %}
+          <span class="muted">—</span>
+        {% endif %}
+      </dd>
+      <dt>Pravni oblik</dt><dd>{{ company.pravni_oblik or "—" }}</dd>
+      <dt>Temeljni kapital</dt><dd>{{ company.temeljni_kapital or "—" }}</dd>
+      <dt>Nadležni sud</dt><dd>{{ company.nadlezni_sud or "—" }}</dd>
+      <dt>Pretežita djelatnost</dt><dd>{{ company.pretezita_djelatnost|activity_label if company.pretezita_djelatnost else "—" }}</dd>
+      <dt>EUID</dt><dd class="mono">{{ company.euid or "—" }}</dd>
+      <dt>Snapshot ID</dt><dd class="mono">{{ company.snapshot_id or "—" }}</dd>
+      <dt>Zadnja stvarna izmjena</dt><dd>{{ company.data_changed_at or "—" }}</dd>
+      <dt>Zadnji sync (touch)</dt><dd>{{ company.updated_at or "—" }}</dd>
+      <dt>Zadnji fetch</dt><dd>{{ company.fetched_at or "—" }}</dd>
+      {% if company.source_url %}
+      <dt>Izvor</dt><dd><a href="{{ company.source_url }}" target="_blank" rel="noopener">Sudreg link</a></dd>
+      {% endif %}
+    </dl>
+    <p class="muted" style="margin-top:.7rem;font-size:.8rem">
+      <strong>Stvarna izmjena</strong> = diff polja koja pratimo.
+      <strong>Sync touch</strong> = red je ponovno učitan (ne mora biti sadržajna promjena).
+    </p>
+    <p style="margin-top:1rem">
+      {% if not company.crm_websites %}
+      <a class="btn" href="/web-finder?mbs={{ company.mbs }}">Pronađi / potvrdi web (CRM)</a>
+      {% endif %}
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Osobe ({{ people|length }})</h2>
+    {% if people %}
+    <ul class="plain">
+      {% for p in people %}
+      <li>
+        <strong>{{ p.person_type }}</strong>
+        — {{ p.ime or p.tekst or "—" }}
+        {% if p.oib %}<span class="mono muted">({{ p.oib }})</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Nema učitanih osoba.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Djelatnosti / predmet poslovanja ({{ activities|length }}{% if activities|length >= 200 %}+{% endif %})</h2>
+    <p class="muted" style="margin-top:0;font-size:.85rem">
+      Bold = pretežita. Ostalo = predmet poslovanja (kao na Sudregu).
+    </p>
+    {% if activities %}
+    <ul class="plain">
+      {% for a in activities %}
+      <li>{% if a.is_primary %}<strong>{{ a.activity|activity_label }}</strong>{% else %}{{ a.activity|activity_label }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Nema djelatnosti.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Pravni odnosi</h2>
+    {% if relations %}
+    <ul class="plain">
+      {% for r in relations %}
+      <li>{{ r.tekst }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Nema zapisa.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Financijska izvješća</h2>
+    {% if reports %}
+    <ul class="plain">
+      {% for r in reports %}
+      <li>{{ r.godina or "?" }} — {{ r.vrsta_izvjestaja or "izvještaj" }}
+        <span class="muted">({{ r.obracunsko_razdoblje or r.datum_predaje or "—" }})</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Nema zapisa.</p>
+    {% endif %}
+  </div>
+
+  <div class="card" style="grid-column: 1 / -1">
+    <h2>Log stvarnih promjena (naša polja)</h2>
+    <p class="muted" style="margin-top:0;font-size:.85rem">
+      Diff naziva, statusa, adrese, emaila, weba, djelatnosti, osoba… — ne signal s Sudreg <code>/promjene</code> API-ja.
+    </p>
+    {% if change_log %}
+    <table>
+      <thead>
+        <tr>
+          <th>Kad</th>
+          <th>Polje</th>
+          <th>Staro</th>
+          <th>Novo</th>
+          <th>Snap</th>
+          <th>Izvor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for L in change_log %}
+        <tr>
+          <td class="muted">{{ L.changed_at }}</td>
+          <td><code>{{ L.field_name }}</code></td>
+          <td class="muted" style="max-width:220px;word-break:break-word">{{ L.old_value or "—" }}</td>
+          <td style="max-width:220px;word-break:break-word">{{ L.new_value or "—" }}</td>
+          <td class="mono">{{ L.snapshot_id or "—" }}</td>
+          <td class="muted">{{ L.source }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">Još nema zapisa (log kreće od idućeg synca nakon migracije).</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Sudreg /promjene (samo signal)</h2>
+    <p class="muted" style="margin-top:0;font-size:.85rem">
+      API kaže da je subjekt bio u delti — <strong>ne</strong> koje naše polje se promijenilo.
+    </p>
+    {% if recent_changes %}
+    <ul class="plain">
+      {% for c in recent_changes %}
+      <li>snapshot {{ c.snapshot_id }} · {{ c.vrijeme or "—" }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Nema zapisa u promjene.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

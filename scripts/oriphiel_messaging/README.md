@@ -15,11 +15,12 @@ IMAP → n8n / Python → Postgres (`oriphiel`) + disk attachmenti + Ollama AI.
 
 | JSON | Uloga |
 |------|--------|
-| `Oriphiel-Live-Account-Stub.json` | Live IMAP + AI + attachmenti (po accountu) |
-| `Oriphiel-Mail-Hub.json` | Backfill / enrich / count (svi accounti) |
+| `Oriphiel-Live-Process.json` | Zajednički Live pipeline (Message / AI / Attach) |
+| `Oriphiel-Live-Imap-Stub.json` | Tanki IMAP stub (1× po mailboxu) |
+| `Oriphiel-Mail-Hub.json` | Backfill / enrich / count |
 | `oriphiel-error-notify.json` | Error notify |
 
-**Ne koristi:** `New mails - mario.vitt@oriphiel.hr.json` (deprecated).
+**Ne koristi:** stari monolit Stub, `New mails - mario.vitt…`
 
 ## VPS
 

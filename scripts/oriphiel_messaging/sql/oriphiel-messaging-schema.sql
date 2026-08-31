@@ -45,11 +45,15 @@ CREATE TABLE IF NOT EXISTS messages (
   external_id     TEXT,
   thread_key      TEXT,
   status          TEXT NOT NULL DEFAULT 'new',
+  folder          TEXT,
+  imap_uid        BIGINT,
+  labels          TEXT[] NOT NULL DEFAULT '{}'::text[],
   ai_summary      TEXT,
   ai_draft        TEXT,
   ai_priority     TEXT,
   raw             JSONB NOT NULL DEFAULT '{}'::jsonb,
   received_at     TIMESTAMPTZ,
+  deleted_at      TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (channel, external_id)
 );
@@ -59,6 +63,16 @@ CREATE INDEX IF NOT EXISTS idx_messages_account ON messages (account_id, receive
 CREATE INDEX IF NOT EXISTS idx_messages_status  ON messages (status);
 CREATE INDEX IF NOT EXISTS idx_messages_thread  ON messages (thread_key);
 CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages (channel, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_folder
+  ON messages (account_id, folder, received_at DESC NULLS LAST);
+CREATE INDEX IF NOT EXISTS idx_messages_imap_uid
+  ON messages (account_id, folder, imap_uid)
+  WHERE imap_uid IS NOT NULL AND deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_messages_deleted
+  ON messages (account_id, deleted_at)
+  WHERE deleted_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_messages_labels_gin
+  ON messages USING GIN (labels);
 
 -- Attachments: metadata u Postgresu, datoteke na disku/S3 (storage_path)
 CREATE TABLE IF NOT EXISTS message_attachments (

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}Sudreg{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <a href="/" style="color:#fff;text-decoration:none">Sudreg · interni pregled</a>
+      <a href="/web-finder" style="color:#9fd4cb;text-decoration:none;margin-left:1rem;font-weight:500;font-size:.9rem">Pronađi web</a>
+      <a href="/web-batch" style="color:#9fd4cb;text-decoration:none;margin-left:1rem;font-weight:500;font-size:.9rem">Masovno</a>
+    </div>
+    <div class="meta">
+      {% if user %}
+      <span>{{ user }}</span>
+      <a href="/logout">Odjava</a>
+      {% endif %}
+    </div>
+  </header>
+  <main class="wrap">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

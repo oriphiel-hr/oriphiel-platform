@@ -3,13 +3,13 @@
   "nodes": [
     {
       "parameters": {
-        "content": "## Multi-account Hub (bez duplog flowa)\n\n1. Otvori **Account Config**:\n- `ACCOUNT_EMAIL` — npr. info@oriphiel.hr\n- `ENV_FILE` — npr. accounts/info.env\n- `STATUS_TAG` — kratki tag za status JSON (npr. info)\n- `ACTION` — `backfill` | `enrich` | `count`\n- `RUN_AI` / `RESET_BEFORE` / `BATCH_SIZE` / `MARK_AS_SEEN`\n\n2. Klikni **Manual Trigger** (jednom).\n\n## Novi mailbox\n1. `cp accounts/*.env.example accounts/XYZ.env` + lozinka\n2. n8n Credentials → novi IMAP\n3. Live: import `oriphiel-live-account-stub.json`, spoji IMAP credential, postavi email\n4. Ops: samo promijeni Account Config ovdje\n\nNe treba kopirati cijeli AI/attachment flow.",
-        "height": 480,
-        "width": 500
+        "content": "## Mail Hub\n\n1. Otvori **Account Config** (Code) — uredi `cfg` objekt\n2. **Manual Trigger** → Execute\n\n| Polje | Dopušteno |\n|-------|----------|\n| ACTION | count \\| backfill \\| enrich |\n| RUN_AI | 0 \\| 1 |\n| RESET_BEFORE | 0 \\| 1 (oprez!) |\n| MARK_AS_SEEN | 0 \\| 1 |\n| BATCH_SIZE | broj npr. 50 |",
+        "height": 320,
+        "width": 480
       },
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [-700, -220],
+      "position": [-700, -200],
       "id": "hub-sticky-001",
       "name": "Sticky Note"
     },
@@ -23,64 +23,10 @@
     },
     {
       "parameters": {
-        "mode": "manual",
-        "duplicateItem": false,
-        "assignments": {
-          "assignments": [
-            {
-              "id": "a0",
-              "name": "ACTION",
-              "value": "count",
-              "type": "string"
-            },
-            {
-              "id": "a1",
-              "name": "ACCOUNT_EMAIL",
-              "value": "mario.vitt@oriphiel.hr",
-              "type": "string"
-            },
-            {
-              "id": "a2",
-              "name": "ENV_FILE",
-              "value": "accounts/oriphiel.hr-mario.vitt.env",
-              "type": "string"
-            },
-            {
-              "id": "a3",
-              "name": "STATUS_TAG",
-              "value": "mario.vitt",
-              "type": "string"
-            },
-            {
-              "id": "a4",
-              "name": "RUN_AI",
-              "value": "0",
-              "type": "string"
-            },
-            {
-              "id": "a5",
-              "name": "RESET_BEFORE",
-              "value": "0",
-              "type": "string"
-            },
-            {
-              "id": "a6",
-              "name": "BATCH_SIZE",
-              "value": "50",
-              "type": "string"
-            },
-            {
-              "id": "a7",
-              "name": "MARK_AS_SEEN",
-              "value": "0",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "jsCode": "// === UREDI VRIJEDNOSTI OVDJE ===\nconst cfg = {\n  ACTION: 'backfill',              // count | backfill | enrich\n  ACCOUNT_EMAIL: 'mario.vitt@oriphiel.hr',\n  ENV_FILE: 'accounts/oriphiel.hr-mario.vitt.env',\n  STATUS_TAG: 'mario.vitt',\n  RUN_AI: '0',                     // 0=ne | 1=da (backfill)\n  RESET_BEFORE: '0',               // 0=ne | 1=da (briše mailove!)\n  BATCH_SIZE: '50',\n  MARK_AS_SEEN: '0',               // 0=ne | 1=da\n};\n\nfunction clean(v) {\n  if (v == null) return '';\n  if (typeof v === 'object' && v.value != null) return String(v.value).trim();\n  return String(v).trim();\n}\n\nconst out = {};\nfor (const [k, v] of Object.entries(cfg)) {\n  out[k] = clean(v);\n}\nout.ACTION = (out.ACTION || 'count').toLowerCase();\n\nif (!out.ACCOUNT_EMAIL) {\n  throw new Error('ACCOUNT_EMAIL je prazan u Account Config');\n}\nif (out.ACTION === 'backfill' && !out.ENV_FILE) {\n  throw new Error('ENV_FILE je prazan u Account Config');\n}\n\nreturn [{ json: out }];"
       },
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.4,
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [-240, 160],
       "id": "hub-account-config-001",
       "name": "Account Config"
@@ -164,7 +110,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const c = $input.first().json;\nconst tag = String(c.STATUS_TAG || 'account').replace(/[^a-zA-Z0-9._-]/g, '');\nconst status = `/tmp/oriphiel-imap-backfill-${tag}.json`;\nconst command = [\n  'cd /root/oriphiel-ai/oriphiel_messaging',\n  `if pgrep -f sync-imap-backfill.py >/dev/null; then echo ALREADY_RUNNING; cat ${status} 2>/dev/null; exit 0; fi`,\n  `nohup env ENV_FILE=${c.ENV_FILE} ACCOUNT_EMAIL=${c.ACCOUNT_EMAIL} RESET_BEFORE=${c.RESET_BEFORE} RUN_AI=${c.RUN_AI} BATCH_SIZE=${c.BATCH_SIZE} MARK_AS_SEEN=${c.MARK_AS_SEEN} STATUS_FILE=${status} bash sync-imap-backfill.sh >>/tmp/oriphiel-imap-backfill-last.log 2>&1 &`,\n  `echo STARTED_PID=$! account=${c.ACCOUNT_EMAIL} RUN_AI=${c.RUN_AI}`,\n  'sleep 2',\n  `cat ${status} 2>/dev/null || echo status_pending`\n].join(' && ');\nreturn [{ json: { ...c, command, status_file: status } }];"
+        "jsCode": "const c = $('Account Config').first().json;\nconst email = String(c.ACCOUNT_EMAIL || '').trim();\nconst envFile = String(c.ENV_FILE || '').trim();\nif (!email || !envFile) throw new Error('ACCOUNT_EMAIL ili ENV_FILE prazan');\n\nconst sh = (s) => `'${String(s).replace(/'/g, \"'\\\\''\")}'`;\nconst tag = String(c.STATUS_TAG || 'account').replace(/[^a-zA-Z0-9._-]/g, '') || 'account';\nconst status = `/tmp/oriphiel-imap-backfill-${tag}.json`;\n\n// ^python3 — da pgrep ne pogodi sam bash -c (koji sadrži ime skripte)\nconst guard = \"if pgrep -f '^python3 -u .*sync-imap-backfill\\\\.py' >/dev/null; then echo ALREADY_RUNNING; cat \" + sh(status) + \" 2>/dev/null; exit 0; fi\";\n\nconst start = '(nohup env ENV_FILE=' + sh(envFile) + ' ACCOUNT_EMAIL=' + sh(email) + ' RESET_BEFORE=' + (c.RESET_BEFORE || '0') + ' RUN_AI=' + (c.RUN_AI || '0') + ' BATCH_SIZE=' + (c.BATCH_SIZE || '50') + ' MARK_AS_SEEN=' + (c.MARK_AS_SEEN || '0') + ' STATUS_FILE=' + sh(status) + ' bash sync-imap-backfill.sh >>/tmp/oriphiel-imap-backfill-last.log 2>&1 & echo STARTED_PID=$!)';\n\nconst command = [\n  'cd /root/oriphiel-ai/oriphiel_messaging',\n  guard,\n  start,\n  'sleep 2',\n  'cat ' + sh(status) + ' 2>/dev/null || echo status_pending'\n].join(' && ');\n\nreturn [{ json: { ...c, command, status_file: status } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -190,7 +136,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const c = $input.first().json;\nconst tag = String(c.STATUS_TAG || 'account').replace(/[^a-zA-Z0-9._-]/g, '');\nconst status = `/tmp/oriphiel-ai-enrich-${tag}.json`;\nconst email = String(c.ACCOUNT_EMAIL).replace(/'/g, \"'\\\\''\");\nconst command = [\n  'cd /root/oriphiel-ai/oriphiel_messaging',\n  `if pgrep -f enrich-existing-messages.py >/dev/null; then echo ALREADY_RUNNING; cat ${status} 2>/dev/null; exit 0; fi`,\n  `if [ ! -f ollama-enrich-message.py ] || [ ! -f enrich-existing-messages.py ]; then echo MISSING_FILES; exit 2; fi`,\n  `nohup env ACCOUNT_EMAIL='${email}' ONLY_MISSING=1 LIMIT=0 BATCH_SIZE=10 OLLAMA_MODEL=llama3.1:8b STATUS_FILE=${status} python3 -u enrich-existing-messages.py >>/tmp/oriphiel-ai-enrich-last.log 2>&1 &`,\n  `echo STARTED_PID=$! account=${email}`,\n  'sleep 2',\n  `cat ${status} 2>/dev/null || echo status_pending`\n].join(' && ');\nreturn [{ json: { ...c, command, status_file: status } }];"
+        "jsCode": "const c = $('Account Config').first().json;\nconst email = String(c.ACCOUNT_EMAIL || '').trim();\nif (!email) throw new Error('ACCOUNT_EMAIL prazan');\n\nconst sh = (s) => `'${String(s).replace(/'/g, \"'\\\\''\")}'`;\nconst tag = String(c.STATUS_TAG || 'account').replace(/[^a-zA-Z0-9._-]/g, '') || 'account';\nconst status = `/tmp/oriphiel-ai-enrich-${tag}.json`;\n\nconst guard = \"if pgrep -f '^python3 -u .*enrich-existing-messages\\\\.py' >/dev/null; then echo ALREADY_RUNNING; cat \" + sh(status) + \" 2>/dev/null; exit 0; fi\";\n\nconst start = '(nohup env ACCOUNT_EMAIL=' + sh(email) + ' ONLY_MISSING=1 LIMIT=0 BATCH_SIZE=10 OLLAMA_MODEL=llama3.1:8b STATUS_FILE=' + sh(status) + ' python3 -u enrich-existing-messages.py >>/tmp/oriphiel-ai-enrich-last.log 2>&1 & echo STARTED_PID=$!)';\n\nconst command = [\n  'cd /root/oriphiel-ai/oriphiel_messaging',\n  guard,\n  'if [ ! -f ollama-enrich-message.py ] || [ ! -f enrich-existing-messages.py ]; then echo MISSING_FILES; exit 2; fi',\n  start,\n  'sleep 2',\n  'cat ' + sh(status) + ' 2>/dev/null || echo status_pending'\n].join(' && ');\n\nreturn [{ json: { ...c, command, status_file: status } }];"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

@@ -1,0 +1,259 @@
+{
+  "name": "Oriphiel — Live Process (shared)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Shared Live Process\n\n1. **Obriši** stari Process u n8n\n2. Import ovaj JSON\n3. Credentials (Postgres + SSH)\n4. **Publish**\n5. Stub → Call Live Process → odaberi ovaj workflow + Publish Stub\n\n`received_at` = **NOW()** (bez IMAP Date — izbjegava RFC timestamp grešku).",
+        "height": 380,
+        "width": 480
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-640, -280],
+      "id": "proc-sticky-001",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [-320, 80],
+      "id": "proc-trigger-001",
+      "name": "When Called by Stub"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id AS account_id\nFROM channels_accounts\nWHERE lower(address) = lower($1)\n  AND channel = 'email'\n  AND is_active = TRUE\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [ $('When Called by Stub').first().json.ACCOUNT_EMAIL ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [-80, 80],
+      "id": "proc-get-account-001",
+      "name": "Get Account",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const acc = $('Get Account').first().json;\nconst mail = $('When Called by Stub').first();\nconst j = mail.json;\n\nif (!acc?.account_id) {\n  throw new Error('Nema account_id za ACCOUNT_EMAIL=' + (j.ACCOUNT_EMAIL || '?'));\n}\n\nfunction header(name) {\n  const h = j.headers || j.metadata || {};\n  const key = Object.keys(h).find(k => k.toLowerCase() === name.toLowerCase());\n  return key ? h[key] : null;\n}\nfunction pickAngle(s) {\n  if (!s) return null;\n  const m = String(s).match(/<([^>]+)>/);\n  return m ? m[1].toLowerCase() : String(s).trim().toLowerCase();\n}\nfunction parseFrom(obj) {\n  if (obj.from?.value?.[0]?.address) return String(obj.from.value[0].address).trim().toLowerCase();\n  if (typeof obj.from === 'string') return obj.from.trim().toLowerCase();\n  return 'unknown@unknown';\n}\nfunction threadKey(obj) {\n  const inReply = pickAngle(header('in-reply-to') || obj.inReplyTo);\n  if (inReply) return inReply;\n  const refs = String(header('references') || obj.references || '');\n  const rm = refs.match(/<([^>]+)>/);\n  if (rm) return rm[1].toLowerCase();\n  const mid = pickAngle(header('message-id') || obj.messageId);\n  if (mid) return mid;\n  const u = obj.attributes?.uid ?? obj.uid ?? 'unknown';\n  return 'uid-' + u;\n}\nfunction toIsoDate(raw) {\n  if (raw == null || raw === '') return null;\n  if (raw instanceof Date && !Number.isNaN(raw.getTime())) return raw.toISOString();\n  let s = String(raw).trim();\n  s = s.replace(/\\s*\\([^)]*\\)\\s*$/g, '').trim();\n  const d = new Date(s);\n  if (Number.isNaN(d.getTime())) return null;\n  return d.toISOString();\n}\n\nconst uid = j.attributes?.uid ?? j.uid;\nconst binary = mail.binary ?? {};\nconst isoDate = toIsoDate(j.date ?? header('date'));\nconst folder = 'INBOX';\nconst external_id = 'imap:' + folder + ':uid-' + uid;\n\nreturn [{\n  json: {\n    account_id: acc.account_id,\n    account_email: j.ACCOUNT_EMAIL,\n    from_address: parseFrom(j),\n    subject: j.subject ?? '',\n    textPlain: j.textPlain ?? j.text ?? '',\n    textHtml: j.textHtml ?? '',\n    uid,\n    imap_uid: uid != null ? Number(uid) : null,\n    folder,\n    date: isoDate,\n    received_at: isoDate,\n    external_id,\n    thread_key: threadKey(j),\n    mode: 'live',\n    has_attachments: Object.keys(binary).length > 0\n  },\n  binary,\n  pairedItem: { item: 0 }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [160, 80],
+      "id": "proc-normalize-001",
+      "name": "Normalize Mail (Live)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO contacts (primary_email)\nSELECT lower($1)\nWHERE NOT EXISTS (\n  SELECT 1 FROM contacts WHERE primary_email = lower($1)\n);\n\nSELECT id AS contact_id\nFROM contacts\nWHERE primary_email = lower($1)\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [ $json.from_address ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [400, 80],
+      "id": "proc-upsert-contact-001",
+      "name": "Upsert Contact",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO messages (\n  account_id, contact_id, channel, direction,\n  from_address, subject, body_text, body_html,\n  external_id, thread_key, status, received_at,\n  folder, imap_uid, labels, deleted_at\n) VALUES (\n  $1::int, $2::int, 'email', 'in',\n  $3, $4, $5, $6,\n  $7, $8, 'new', NOW(),\n  COALESCE(NULLIF($9, ''), 'INBOX'),\n  NULLIF($10, '')::bigint,\n  '{}'::text[],\n  NULL\n)\nON CONFLICT (channel, external_id) DO UPDATE SET\n  subject = EXCLUDED.subject,\n  body_text = EXCLUDED.body_text,\n  body_html = EXCLUDED.body_html,\n  from_address = EXCLUDED.from_address,\n  thread_key = EXCLUDED.thread_key,\n  folder = EXCLUDED.folder,\n  imap_uid = EXCLUDED.imap_uid,\n  deleted_at = NULL,\n  status = CASE WHEN messages.status = 'deleted' THEN 'new' ELSE messages.status END\nRETURNING id AS message_id, subject;",
+        "options": {
+          "queryReplacement": "={{ (() => { const m = $('Normalize Mail (Live)').first().json; const c = $('Upsert Contact').first().json; return [ m.account_id, c.contact_id, m.from_address, m.subject, m.textPlain, m.textHtml, m.external_id, m.thread_key, m.folder || 'INBOX', m.imap_uid != null ? String(m.imap_uid) : '' ]; })() }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [640, 80],
+      "id": "proc-insert-msg-001",
+      "name": "Insert Message",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const mail = $('Normalize Mail (Live)').first().json;\nconst msg = $('Insert Message').first().json;\nconst model = $env.OLLAMA_MODEL || 'llama3.1:8b';\nconst url = ($env.OLLAMA_URL || 'http://127.0.0.1:11434').replace(/\\/$/, '');\nconst body = (mail.textPlain || '').slice(0, 6000);\nconst prompt = `Analiziraj dolazni email na hrvatskom. Vrati SAMO JSON: {\\\"summary\\\":\\\"...\\\",\\\"priority\\\":\\\"low|normal|high|urgent\\\",\\\"draft_reply\\\":\\\"...\\\"}\\n\\nOd: ${mail.from_address}\\nPredmet: ${mail.subject}\\n\\n${body}`;\n\ntry {\n  const resp = await fetch(`${url}/api/generate`, {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ model, prompt, stream: false, format: 'json', options: { temperature: 0.2 } })\n  });\n  const data = await resp.json();\n  const raw = data.response || '{}';\n  const ai = JSON.parse(raw.match(/\\{[\\s\\S]*\\}/)?.[0] || raw);\n  const priority = ['low','normal','high','urgent'].includes(String(ai.priority || '').toLowerCase()) ? String(ai.priority).toLowerCase() : 'normal';\n  const summary = String(ai.summary || ai.title || ai.text || '').slice(0, 4000) || (`Predmet: ${mail.subject || ''}`).slice(0, 4000);\n  return [{ json: {\n    message_id: msg.message_id,\n    ai_summary: summary,\n    ai_priority: priority,\n    ai_draft: String(ai.draft_reply || ai.draft || '').slice(0, 8000),\n    account_id: mail.account_id,\n    has_attachments: !!mail.has_attachments\n  }, pairedItem: { item: 0 } }];\n} catch (e) {\n  return [{ json: {\n    message_id: msg.message_id,\n    ai_summary: mail.subject ? (`Predmet: ${mail.subject}`).slice(0, 4000) : null,\n    ai_priority: 'normal',\n    ai_draft: null,\n    ai_error: String(e.message || e),\n    account_id: mail.account_id,\n    has_attachments: !!mail.has_attachments\n  }, pairedItem: { item: 0 } }];\n}"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, 80],
+      "id": "proc-ai-enrich-001",
+      "name": "AI Enrich (Ollama)",
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE messages\nSET ai_summary = $2,\n    ai_priority = $3,\n    ai_draft = $4\nWHERE id = $1\nRETURNING id AS message_id, ai_summary, ai_priority;",
+        "options": {
+          "queryReplacement": "={{ [ $json.message_id, $json.ai_summary, $json.ai_priority, $json.ai_draft ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [1120, 80],
+      "id": "proc-ai-update-001",
+      "name": "Update Message AI",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "att-if-001",
+              "leftValue": "={{ $('Normalize Mail (Live)').first().json.has_attachments ? 1 : Object.keys($('Normalize Mail (Live)').first().binary || {}).length }}",
+              "rightValue": 0,
+              "operator": { "type": "number", "operation": "gt" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1360, 80],
+      "id": "proc-if-attach-001",
+      "name": "If Has Attachments"
+    },
+    {
+      "parameters": {
+        "command": "=mkdir -p /var/lib/oriphiel/attachments/email/{{ $('Normalize Mail (Live)').first().json.account_id }} && chown -R 1000:1000 /var/lib/oriphiel/attachments"
+      },
+      "type": "n8n-nodes-base.ssh",
+      "typeVersion": 1,
+      "position": [1600, 0],
+      "id": "proc-mkdir-001",
+      "name": "Create Attachment Directory",
+      "credentials": {
+        "sshPassword": {
+          "id": "Zk51RObusYzm7RWu",
+          "name": "SSH Password account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $('Insert Message').first().json;\nconst mail = $('Normalize Mail (Live)').first();\nconst binary = mail.binary || {};\nconst accountId = mail.json.account_id;\nconst messageId = msg.message_id || msg.id;\nconst entries = Object.entries(binary);\nif (!entries.length) return [];\n\n// Host (DB + SSH mkdir): /var/lib/oriphiel/attachments\n// n8n Docker Write File: /data/attachments (volume mount)\nconst HOST_ROOT = '/var/lib/oriphiel/attachments/email';\nconst N8N_ROOT = '/data/attachments/email';\n\nreturn entries.map(([key, file]) => {\n  const sizeNum = Number(file.fileSize);\n  const filename = String(file.fileName || key || 'attachment.bin').replace(/[\\\\/]/g, '_');\n  const rel = `${accountId}/${messageId}_${filename}`;\n  return {\n    json: {\n      message_id: messageId,\n      filename,\n      mimeType: file.mimeType || 'application/octet-stream',\n      fileSize: Number.isFinite(sizeNum) ? Math.round(sizeNum) : 0,\n      storage_path: `${HOST_ROOT}/${rel}`,\n      write_path: `${N8N_ROOT}/${rel}`,\n      account_id: accountId\n    },\n    binary: { data: file },\n    pairedItem: { item: 0 }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1840, 0],
+      "id": "proc-prep-att-001",
+      "name": "Prepare Attachment Data"
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "={{ $json.write_path }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [2080, 0],
+      "id": "proc-write-att-001",
+      "name": "Write Attachment File"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO message_attachments (\n  message_id, filename, mime_type, size_bytes, storage_path\n) VALUES ($1, $2, $3, $4, $5)\nRETURNING id, message_id, filename, size_bytes, storage_path;",
+        "options": {
+          "queryReplacement": "={{ [ $json.message_id, $json.filename, $json.mimeType, $json.fileSize, $json.storage_path ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [2320, 0],
+      "id": "proc-insert-att-001",
+      "name": "Insert Attachment",
+      "credentials": {
+        "postgres": {
+          "id": "cRlK2rGhGJ0ivkkh",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When Called by Stub": {
+      "main": [[{ "node": "Get Account", "type": "main", "index": 0 }]]
+    },
+    "Get Account": {
+      "main": [[{ "node": "Normalize Mail (Live)", "type": "main", "index": 0 }]]
+    },
+    "Normalize Mail (Live)": {
+      "main": [[{ "node": "Upsert Contact", "type": "main", "index": 0 }]]
+    },
+    "Upsert Contact": {
+      "main": [[{ "node": "Insert Message", "type": "main", "index": 0 }]]
+    },
+    "Insert Message": {
+      "main": [[{ "node": "AI Enrich (Ollama)", "type": "main", "index": 0 }]]
+    },
+    "AI Enrich (Ollama)": {
+      "main": [[{ "node": "Update Message AI", "type": "main", "index": 0 }]]
+    },
+    "Update Message AI": {
+      "main": [[{ "node": "If Has Attachments", "type": "main", "index": 0 }]]
+    },
+    "If Has Attachments": {
+      "main": [[{ "node": "Create Attachment Directory", "type": "main", "index": 0 }]]
+    },
+    "Create Attachment Directory": {
+      "main": [[{ "node": "Prepare Attachment Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Attachment Data": {
+      "main": [[{ "node": "Write Attachment File", "type": "main", "index": 0 }]]
+    },
+    "Write Attachment File": {
+      "main": [[{ "node": "Insert Attachment", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

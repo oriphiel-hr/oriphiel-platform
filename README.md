@@ -12,6 +12,7 @@ Monorepo za Oriphiel infrastrukturu i produkte.
 | Open WebUI (ai.oriph.io) | `assets/`, `scripts/deploy-*.ps1` | VPS srv1890026 |
 | Messaging (n8n + IMAP) | `scripts/oriphiel_messaging/` | `/root/oriphiel-ai/oriphiel_messaging/` |
 | Sudreg sync | `scripts/sudreg/` | `/opt/oriphiel-ai/scripts/sudreg/` |
+| Sudreg UI (interni pregled) | `apps/sudreg-ui/` | VPS `127.0.0.1:8091` (+ SSH tunnel) |
 
 Detalji o hostovima: `infra/hosts.yaml`
 
@@ -21,6 +22,8 @@ Detalji o hostovima: `infra/hosts.yaml`
 oriphiel-platform/
 ├── ops/                      # SQL / PS / bash / runbookovi — počni ovdje
 │   └── INDEX.md
+├── apps/
+│   └── sudreg-ui/            # interni web pregled Sudreg baze
 ├── ravnopar/                 # backend, frontend-next, mobile, deploy
 ├── assets/                   # Open WebUI branding
 ├── scripts/

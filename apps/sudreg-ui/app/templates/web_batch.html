@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+{% block title %}Masovna pretraga weba — Sudreg{% endblock %}
+{% block content %}
+<p><a href="/">← Pretraga</a> · <a href="/web-finder">Jedna tvrtka</a></p>
+<h1>Masovna pretraga weba</h1>
+<p class="sub">
+  Pokrene posao u CRM bazi. <strong>Worker na VPS-u</strong> ga odrađuje u pozadini —
+  laptop možeš ugasiti. Sprema samo kandidate s dovoljno visokim skorom (OIB/MBS na stranici).
+</p>
+
+{% if flash %}
+<div class="card" style="margin-bottom:1rem;border-color:#1a7a6d">{{ flash }}</div>
+{% endif %}
+{% if error %}
+<div class="err">{{ error }}</div>
+{% endif %}
+
+<div class="stats">
+  <div class="stat">CRM webovi: <strong>{{ stats.crm_websites or 0 }}</strong></div>
+  <div class="stat">Pokušaja: <strong>{{ stats.attempts or 0 }}</strong></div>
+  <div class="stat">Auto-spremljeno: <strong>{{ stats.attempts_saved or 0 }}</strong></div>
+</div>
+
+{% if active %}
+<div class="card" style="margin-bottom:1rem">
+  <h2 style="margin-top:0">Aktivan posao #{{ active.id }}</h2>
+  <dl class="kv">
+    <dt>Status</dt><dd><span class="badge">{{ active.status }}</span></dd>
+    <dt>Obrađeno</dt><dd>{{ active.processed }} · spremljeno {{ active.saved }} · preskočeno {{ active.skipped }} · greške {{ active.errors }}</dd>
+    <dt>Limit</dt><dd>{{ active.max_companies or "bez limita" }} · min. skor {{ active.auto_save_min_score }}</dd>
+    <dt>Zadnji</dt><dd class="mono">{{ active.last_mbs or "—" }}</dd>
+    <dt>Poruka</dt><dd>{{ active.last_message or "—" }}</dd>
+    <dt>Ažurirano</dt><dd>{{ active.updated_at or "—" }}</dd>
+  </dl>
+  <div style="margin-top:1rem;display:flex;gap:.6rem;flex-wrap:wrap">
+    {% if active.status in ('queued', 'running') %}
+    <form method="post" action="/web-batch/pause">
+      <input type="hidden" name="job_id" value="{{ active.id }}" />
+      <button type="submit" class="btn secondary">Pauziraj</button>
+    </form>
+    {% endif %}
+    {% if active.status == 'paused' %}
+    <form method="post" action="/web-batch/resume">
+      <input type="hidden" name="job_id" value="{{ active.id }}" />
+      <button type="submit">Nastavi</button>
+    </form>
+    {% endif %}
+    <a class="btn ghost" href="/web-batch">Osvježi status</a>
+  </div>
+  <p class="muted" style="margin:.8rem 0 0;font-size:.82rem">
+    Ako status ostane <code>queued</code> dulje od minute — worker na VPS-u nije pokrenut
+    (<code>web-finder-worker</code> u docker compose).
+  </p>
+</div>
+{% else %}
+<div class="card" style="margin-bottom:1rem">
+  <h2 style="margin-top:0">Pokreni novi posao</h2>
+  <form class="filters" method="post" action="/web-batch/start" style="grid-template-columns:1fr 1fr 1fr auto;align-items:end">
+    <label>Max tvrtki
+      <input type="text" name="max_companies" value="500" />
+    </label>
+    <label>Min. skor za auto-spremanje
+      <input type="text" name="auto_save_min_score" value="60" />
+    </label>
+    <label class="check" style="padding-bottom:.55rem">
+      <input type="checkbox" name="only_with_email" value="1" checked />
+      Samo s emailom (bolji pogodak)
+    </label>
+    <button type="submit">Pokreni u pozadini</button>
+  </form>
+  <p class="muted" style="margin:.7rem 0 0;font-size:.82rem">
+    Traži tvrtke bez CRM weba. Visoki skor (≥60) ≈ OIB ili MBS nađen na stranici.
+  </p>
+</div>
+{% endif %}
+
+<div class="panel">
+  <table>
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Status</th>
+        <th>Progress</th>
+        <th>Pokrenuo</th>
+        <th>Poruka</th>
+        <th>Vrijeme</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for j in jobs %}
+      <tr>
+        <td class="mono">{{ j.id }}</td>
+        <td><span class="badge">{{ j.status }}</span></td>
+        <td>{{ j.processed }}/{{ j.max_companies or "∞" }} · 💾{{ j.saved }}</td>
+        <td>{{ j.started_by or "—" }}</td>
+        <td class="muted">{{ j.last_message or "—" }}</td>
+        <td class="muted mono" style="font-size:.8rem">{{ j.updated_at or j.created_at }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="empty">Još nema poslova.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

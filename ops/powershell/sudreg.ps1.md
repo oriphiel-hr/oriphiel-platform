@@ -122,3 +122,4 @@ Na VPS-u dodaj `-Local`. Batch: [`../sql/sudreg-useful.sql`](../sql/sudreg-usefu
 ## Related
 
 - Docs: [`../../scripts/sudreg/UPUTE.md`](../../scripts/sudreg/UPUTE.md)
+- Interni web UI (pretraga/paginacija): [`../../apps/sudreg-ui/README.md`](../../apps/sudreg-ui/README.md)

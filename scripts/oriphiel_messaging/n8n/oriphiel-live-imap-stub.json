@@ -1,0 +1,102 @@
+{
+  "name": "Oriphiel — Live IMAP Stub (per account)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Tanki Live Stub (po mailboxu)\n\nSamo IMAP + Account Email → **Execute Workflow** → zajednički **Oriphiel — Live Process (shared)**.\n\n1. Import / Active najprije **Live Process (shared)**\n2. U nodu **Call Live Process** odaberi taj workflow\n3. IMAP credential = ovaj mailbox\n4. **Account Email** = adresa (npr. mario.vitt@… / info@…)\n5. Active\n\nNovi mailbox = **Duplicate ovaj stub** (NE Process) + novi IMAP + novi email.\n\nOps (backfill/enrich/count) → **Mail Hub**.",
+        "height": 420,
+        "width": 500
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-640, -240],
+      "id": "stub-sticky-001",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "downloadAttachments": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailReadImap",
+      "typeVersion": 2.2,
+      "position": [-320, 80],
+      "id": "stub-imap-001",
+      "name": "Email Trigger (IMAP)",
+      "credentials": {
+        "imap": {
+          "id": "jtEwVo8jV9I4d8Ur",
+          "name": "IMAP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "duplicateItem": false,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "acc-email",
+              "name": "ACCOUNT_EMAIL",
+              "value": "mario.vitt@oriphiel.hr",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [-80, 80],
+      "id": "stub-account-email-001",
+      "name": "Account Email"
+    },
+    {
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "value": "",
+          "mode": "list",
+          "cachedResultName": "Oriphiel — Live Process (shared)"
+        },
+        "workflowInputs": {
+          "mappingMode": "passthrough",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.3,
+      "position": [160, 80],
+      "id": "stub-call-process-001",
+      "name": "Call Live Process"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Email Trigger (IMAP)": {
+      "main": [[{ "node": "Account Email", "type": "main", "index": 0 }]]
+    },
+    "Account Email": {
+      "main": [[{ "node": "Call Live Process", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

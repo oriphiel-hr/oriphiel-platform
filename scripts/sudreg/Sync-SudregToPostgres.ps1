@@ -86,6 +86,17 @@ WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = '$PgDb')\gexec
   if (-not (Test-Path -LiteralPath $SchemaFile)) { throw "Nedostaje $SchemaFile" }
   $schema = Get-Content -LiteralPath $SchemaFile -Raw -Encoding UTF8
   Invoke-VpsPsql -Sql $schema -Database $PgDb
+  $changeLogSql = Join-Path (Join-Path $scriptDir "sql") "company-change-log.sql"
+  if (Test-Path -LiteralPath $changeLogSql) {
+    Write-Host "Primjenjujem company-change-log.sql..." -ForegroundColor Cyan
+    $cl = Get-Content -LiteralPath $changeLogSql -Raw -Encoding UTF8
+    Invoke-VpsPsql -Sql $cl -Database $PgDb
+  }
+  $websiteSql = Join-Path (Join-Path $scriptDir "sql") "add-website-column.sql"
+  if (Test-Path -LiteralPath $websiteSql) {
+    $ws = Get-Content -LiteralPath $websiteSql -Raw -Encoding UTF8
+    Invoke-VpsPsql -Sql $ws -Database $PgDb
+  }
 }
 
 function Sql-Lit([string]$s) {
@@ -147,11 +158,24 @@ function New-CompanyBundleSql {
   $ok = if ($Row.ok -eq $false) { "FALSE" } else { "TRUE" }
   $fetched = if ($Row.fetchedAt) { Sql-Lit ([string]$Row.fetchedAt) + "::timestamptz" } else { "NOW()" }
 
+  $actParts = @($Row.djelatnosti) | ForEach-Object { [string]$_ } | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+  $actNewLit = Sql-Lit (($actParts -join "`n"))
+  $peopleBits = New-Object System.Collections.Generic.List[string]
+  foreach ($p in @($Row.clanovi)) {
+    if ($null -eq $p) { continue }
+    [void]$peopleBits.Add(("clan:{0}:{1}" -f [string]$p.ime, [string]$p.oib))
+  }
+  foreach ($p in @($Row.zastupnici)) {
+    if ($null -eq $p) { continue }
+    [void]$peopleBits.Add(("zastupnik:{0}:{1}" -f [string]$p.ime, [string]$p.oib))
+  }
+  $peopleNewLit = Sql-Lit (($peopleBits.ToArray() -join "`n"))
+
   $sb = New-Object System.Text.StringBuilder
   [void]$sb.AppendLine(@"
 INSERT INTO companies (
   mbs, oib, euid, status, deleted, deleted_note, nadlezni_sud,
-  naziv, naziv_kraci, adresa, email, temeljni_kapital, pravni_oblik, pretezita_djelatnost,
+  naziv, naziv_kraci, adresa, email, website, temeljni_kapital, pravni_oblik, pretezita_djelatnost,
   snapshot_id, source_url, scrape_ok, scrape_error, fetched_at, updated_at
 ) VALUES (
   $mbsLit,
@@ -165,6 +189,7 @@ INSERT INTO companies (
   $(Sql-Lit $Row.nazivKraci),
   $(Sql-Lit $Row.adresa),
   $(Sql-Lit $Row.email),
+  $(Sql-Lit $Row.website),
   $(Sql-Lit $Row.temeljniKapital),
   $(Sql-Lit $Row.pravniOblik),
   $(Sql-Lit $Row.pretezitaDjelatnost),
@@ -186,6 +211,7 @@ ON CONFLICT (mbs) DO UPDATE SET
   naziv_kraci = EXCLUDED.naziv_kraci,
   adresa = EXCLUDED.adresa,
   email = EXCLUDED.email,
+  website = COALESCE(EXCLUDED.website, companies.website),
   temeljni_kapital = EXCLUDED.temeljni_kapital,
   pravni_oblik = EXCLUDED.pravni_oblik,
   pretezita_djelatnost = EXCLUDED.pretezita_djelatnost,
@@ -195,6 +221,24 @@ ON CONFLICT (mbs) DO UPDATE SET
   scrape_error = EXCLUDED.scrape_error,
   fetched_at = EXCLUDED.fetched_at,
   updated_at = NOW();
+
+-- Diff kolekcija koje pratimo (ne /promjene API)
+SELECT sudreg_log_collection_change(
+  $mbsLit,
+  'activities',
+  (SELECT string_agg(activity, E'\n' ORDER BY sort_order, id) FROM company_activities WHERE mbs = $mbsLit),
+  $actNewLit,
+  $SnapId,
+  'sync'
+);
+SELECT sudreg_log_collection_change(
+  $mbsLit,
+  'people',
+  (SELECT string_agg(person_type || ':' || coalesce(ime,'') || ':' || coalesce(oib,''), E'\n' ORDER BY person_type, sort_order, id) FROM company_people WHERE mbs = $mbsLit),
+  $peopleNewLit,
+  $SnapId,
+  'sync'
+);
 
 DELETE FROM company_people WHERE mbs = $mbsLit;
 DELETE FROM company_activities WHERE mbs = $mbsLit;

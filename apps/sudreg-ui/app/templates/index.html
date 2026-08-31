@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Sudreg — pretraga{% endblock %}
+{% block content %}
+{% if db_error %}
+<div class="err">
+  <strong>Baza nije dostupna.</strong> {{ db_error }}<br />
+  Provjeri SSH tunnel / DATABASE_URL u .env
+</div>
+{% endif %}
+<div class="stats">
+  <div class="stat">Firme: <strong>{{ "{:,}".format(stats.companies or 0).replace(",", ".") }}</strong></div>
+  <div class="stat">Osobe: <strong>{{ "{:,}".format(stats.people or 0).replace(",", ".") }}</strong></div>
+  <div class="stat">Djelatnosti: <strong>{{ "{:,}".format(stats.activities or 0).replace(",", ".") }}</strong></div>
+  <div class="stat">Snapshot: <strong>{{ stats.last_snapshot or "—" }}</strong></div>
+</div>
+
+<form class="filters" method="get" action="/">
+  <label>Pretraga (naziv, OIB, MBS, adresa, email, web)
+    <input type="text" name="q" value="{{ q }}" placeholder="npr. Oriphiel ili 88070789896" autofocus />
+  </label>
+  <label>Status
+    <select name="status">
+      <option value="">Svi</option>
+      {% for s in statuses %}
+      <option value="{{ s }}" {% if status == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Djelatnost (pretežita)
+    <select name="activity" class="activity-select">
+      <option value="">Sve djelatnosti</option>
+      {% for a in activities %}
+      <option value="{{ a.activity }}" {% if activity == a.activity %}selected{% endif %}>
+        {{ a.label or a.activity }} ({{ a.n }})
+      </option>
+      {% endfor %}
+    </select>
+  </label>
+  <label class="check">
+    <input type="checkbox" name="include_deleted" value="1" {% if include_deleted %}checked{% endif %} />
+    Uključi brisane
+  </label>
+  <button type="submit">Traži</button>
+</form>
+<p class="muted" style="margin:-0.4rem 0 1rem;font-size:.82rem">
+  Dropdown = pretežite djelatnosti (NKD naziv + broj firmi). Počni tipkati naziv ili šifru (npr. <code>restoran</code> ili <code>56.</code>).
+</p>
+
+<div class="pager">
+  <div class="muted">
+    {{ total }} rezultata · stranica {{ page }} / {{ pages }} · {{ page_size }} po stranici
+  </div>
+  <div class="links">
+    {% if has_prev %}
+    <a class="btn ghost" href="/?q={{ q|urlencode }}&status={{ status|urlencode }}&activity={{ activity|urlencode }}&page={{ page - 1 }}{% if include_deleted %}&include_deleted=1{% endif %}">← Prethodna</a>
+    {% endif %}
+    {% if has_next %}
+    <a class="btn ghost" href="/?q={{ q|urlencode }}&status={{ status|urlencode }}&activity={{ activity|urlencode }}&page={{ page + 1 }}{% if include_deleted %}&include_deleted=1{% endif %}">Sljedeća →</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="panel">
+  {% if rows %}
+  <table>
+    <thead>
+      <tr>
+        <th>Naziv</th>
+        <th>OIB</th>
+        <th>MBS</th>
+        <th>Status</th>
+        <th>Adresa</th>
+        <th>Kontakt</th>
+        <th>Web</th>
+        <th>Pretežita djelatnost</th>
+        <th>Snap / izmjena</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td class="name-cell">
+          {% if r.naziv_kraci %}
+            <a href="/company/{{ r.mbs }}"><strong>{{ r.naziv_kraci }}</strong></a>
+            <div class="muted name-full" title="{{ r.naziv }}">{{ r.naziv }}</div>
+          {% else %}
+            <a href="/company/{{ r.mbs }}"><strong>{{ r.naziv or "(bez naziva)" }}</strong></a>
+          {% endif %}
+          {% if r.deleted %}<span class="badge del">brisano</span>{% endif %}
+        </td>
+        <td class="mono">{{ r.oib or "—" }}</td>
+        <td class="mono"><a href="/company/{{ r.mbs }}">{{ r.mbs }}</a></td>
+        <td>{% if r.status %}<span class="badge">{{ r.status }}</span>{% else %}—{% endif %}</td>
+        <td class="muted addr-cell">{{ r.adresa or "—" }}</td>
+        <td class="muted">
+          {% if r.email %}<a href="mailto:{{ r.email }}">{{ r.email }}</a>{% else %}—{% endif %}
+        </td>
+        <td class="web-cell">
+          {% if r.website_source == 'crm' and r.website %}
+            {% set web = r.website if r.website.startswith('http') else 'https://' + r.website %}
+            <div class="web-box has">
+              <span class="web-pill">CRM</span>
+              <a class="web-url" href="{{ web }}" target="_blank" rel="noopener" title="{{ r.website }}">{{ r.website|replace('https://','')|replace('http://','') }}</a>
+              <div class="web-actions">
+                <a href="/company/{{ r.mbs }}#web">u zapisu</a>
+                {% if r.crm_domain_count and r.crm_domain_count > 1 %}
+                <span class="muted">+{{ r.crm_domain_count - 1 }} domene</span>
+                {% endif %}
+                <a href="/web-finder?mbs={{ r.mbs }}">provjeri</a>
+              </div>
+            </div>
+          {% elif r.website_source == 'sudreg' and r.website %}
+            {% set web = r.website if r.website.startswith('http') else 'https://' + r.website %}
+            <div class="web-box has">
+              <span class="web-pill sudreg">Sudreg</span>
+              <a class="web-url" href="{{ web }}" target="_blank" rel="noopener" title="{{ r.website }}">{{ r.website|replace('https://','')|replace('http://','') }}</a>
+              <div class="web-actions">
+                <a href="/company/{{ r.mbs }}#web">u zapisu</a>
+                <a href="/web-finder?mbs={{ r.mbs }}">CRM</a>
+              </div>
+            </div>
+          {% else %}
+            <div class="web-box missing">
+              <a class="web-find" href="/web-finder?mbs={{ r.mbs }}">Pronađi web</a>
+            </div>
+          {% endif %}
+        </td>
+        <td class="muted act-cell">
+          {% set act = r.primary_activity or r.pretezita_djelatnost %}
+          {% if act %}
+            <div class="act-label">{{ act|activity_label }}</div>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+          {% if r.activities_count and r.activities_count > 1 %}
+            <div class="act-more"><a href="/company/{{ r.mbs }}">+{{ r.activities_count - 1 }} ostalih</a></div>
+          {% endif %}
+        </td>
+        <td class="muted mono" style="font-size:.8rem">
+          <div>snap {{ r.snapshot_id or "—" }}</div>
+          <div title="Zadnja stvarna izmjena praćenog polja">Δ {{ r.data_changed_at or "—" }}</div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">Nema rezultata. Probaj drugi upit ili makni filter statusa.</div>
+  {% endif %}
+</div>
+{% endblock %}

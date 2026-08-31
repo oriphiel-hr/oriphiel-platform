@@ -1,7 +1,9 @@
 # DEPRECATED — ne importaj u n8n.
 # Zamjena:
-#   Live:  oriphiel-live-account-stub.json   → Downloads\Oriphiel-Live-Account-Stub.json
-#   Ops:   oriphiel-mail-hub.json            → Downloads\Oriphiel-Mail-Hub.json
+#   Live Process: oriphiel-live-process.json     → Downloads\Oriphiel-Live-Process.json
+#   Live Stub:    oriphiel-live-imap-stub.json   → Downloads\Oriphiel-Live-Imap-Stub.json
+#   Ops Hub:      oriphiel-mail-hub.json         → Downloads\Oriphiel-Mail-Hub.json
 # Vidi: UPUTE.md , MULTI-ACCOUNT.md , ../README.md
 #
-# new-mails-mario-vitt.json ostaje samo kao arhiva starog monolitnog workflowa.
+# Stari monolit: oriphiel-live-account-stub.json (prazan placeholder)
+# Arhiva:        new-mails-mario-vitt.json

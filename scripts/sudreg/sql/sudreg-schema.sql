@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS companies (
   naziv_kraci          TEXT,
   adresa               TEXT,
   email                TEXT,
+  website              TEXT,
   temeljni_kapital     TEXT,
   pravni_oblik         TEXT,
   pretezita_djelatnost TEXT,
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS companies (
 
 CREATE INDEX IF NOT EXISTS idx_companies_oib ON companies (oib);
 CREATE INDEX IF NOT EXISTS idx_companies_email ON companies (email);
+CREATE INDEX IF NOT EXISTS idx_companies_website ON companies (website);
 CREATE INDEX IF NOT EXISTS idx_companies_snapshot ON companies (snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_companies_naziv ON companies (naziv);
 CREATE INDEX IF NOT EXISTS idx_companies_updated ON companies (updated_at DESC);
